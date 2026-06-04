@@ -1,6 +1,6 @@
 ---
 name: gtm-pipeline:demo
-description: Generate a demo lead list of ~10 enriched contacts with personalized message examples. Use when a demo is requested, a webhook prompt describes a target audience, or someone asks to "create a demo for [client]". Enforces demo mode restrictions (email only, no phone, ~10 contacts). Chains people-search → people-enrichment → message generation.
+description: Generate a demo lead list of ~10 enriched contacts with personalized message examples. Use when a demo is requested, a webhook prompt describes a target audience, or someone asks to "create a demo for [client]". Enforces demo mode restrictions (email only, no phone, ~10 contacts). Chains people-search → contact-filter → people-enrichment → (optional signal-search) → message generation. Pass `--with-signals` (or ask the user) to enable a buying-intent scoring pass before message generation — pricier but produces sharper, signal-anchored messages.
 ---
 
 # Demo
@@ -22,6 +22,7 @@ Generate a demo lead list of ~10 enriched contacts with personalized message exa
 - **No phone enrichment** — email only
 - **~10 contacts** (request 10–15, expect enrichment drop-off)
 - Message generation is optional but recommended
+- **Signal search is opt-in** — off by default. Enable via `--with-signals` flag or explicit user request. See Step 5.5.
 
 ---
 
@@ -105,6 +106,87 @@ headline (optional), summary (optional), recent_posts (optional)
 
 ---
 
+## Step 5.5 — Signal Search (Optional)
+
+**Default: OFF.** Enable when:
+- The user explicitly asks for signal-anchored messages
+- The webhook prompt mentions buying triggers (funding, hiring, transformation, recent news)
+- The client's offering depends on timing signals to make sense (e.g. "we help post-Series-A companies scale ops")
+- A `--with-signals` flag is passed to the demo invocation
+
+**Cost note:** adds ~$0.01–0.05 per unique company (web search + scoring). On a 10-contact demo, that's typically 5–10 unique companies, so <$0.50.
+
+### Required inputs for signal-search
+
+Signal-search needs three context files:
+- `context/icp.md` — already collected in Step 1
+- `context/offering.md` — the value-prop block from Step 1 (write it now if not already saved)
+- `context/signal_criteria.md` — bulleted list of signal types relevant to the offering
+
+If `signal_criteria.md` doesn't exist, ask the user: *"What would a company be doing right now that suggests they need what you offer?"* — capture 5–10 bullets and save.
+
+### Run
+
+```bash
+# Build company list from unique companies in the enriched contacts
+python3 -c "
+import csv, sys
+seen = set()
+with open('csv/output/contacts_enriched.csv') as f, open('csv/input/companies_raw.csv', 'w', newline='') as out:
+    reader = csv.DictReader(f)
+    writer = csv.DictWriter(out, fieldnames=['company_name', 'company_domain', 'company_website'])
+    writer.writeheader()
+    for row in reader:
+        c = row.get('company_name') or row.get('company') or ''
+        if c and c not in seen:
+            seen.add(c)
+            writer.writerow({
+                'company_name': c,
+                'company_domain': row.get('company_domain') or '',
+                'company_website': row.get('company_website') or row.get('website') or '',
+            })
+"
+
+# Run signal-search on the unique companies
+export $(grep -E 'PARALLEL_API_KEY|OPENROUTER_API_KEY|FIRECRAWL_API_KEY|GEMINI_API_KEY' "$GTM_ENV_PATH" | xargs) && \
+  python3 ~/.claude/skills/gtm-signal-search/signal_search.py \
+    --client-dir {client-slug}-gtm
+```
+
+For the demo, leave Firecrawl and Parallel enrichment **OFF** — web search + scoring is enough for a ~10-contact lead list. Enable Firecrawl only if on-site content (careers, blog) is the primary signal source.
+
+### Merge signals back into contacts
+
+```python
+import csv, json
+signals = {}
+with open('csv/intermediate/signals.csv') as f:
+    for row in csv.DictReader(f):
+        signals[row['company_name']] = {
+            'overall_score': row.get('overallScore', ''),
+            'scored_signals': row.get('scoredSignals', ''),
+            'overall_summary': row.get('overallSummary', ''),
+        }
+
+rows_out = []
+with open('csv/output/contacts_enriched.csv') as f:
+    for row in csv.DictReader(f):
+        s = signals.get(row.get('company_name') or row.get('company') or '', {})
+        row['company_overall_score'] = s.get('overall_score', '')
+        row['company_scored_signals'] = s.get('scored_signals', '')
+        row['company_overall_summary'] = s.get('overall_summary', '')
+        rows_out.append(row)
+
+with open('csv/output/contacts_enriched.csv', 'w', newline='') as f:
+    w = csv.DictWriter(f, fieldnames=list(rows_out[0].keys()))
+    w.writeheader()
+    w.writerows(rows_out)
+```
+
+The message-generation step in Step 6 will then have `company_overall_summary` and `company_scored_signals` per contact — use the highest-scored signal as the message hook.
+
+---
+
 ## Step 6 — Generate Message Examples
 
 Generate **2–4 sample messages** before committing to the full batch.
@@ -125,7 +207,7 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 ### Quality Rules
 
 **Must have:**
-- Specific hook (post reference OR career insight — not generic)
+- Specific hook (post reference OR career insight OR scored buying signal — not generic)
 - Clear value proposition
 - Natural, conversational tone
 - Soft CTA
@@ -135,6 +217,8 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 - Generic observations ("impressive background", "I noticed you're in [industry]")
 - Corporate jargon or buzzwords
 - Pushy CTAs ("Let's schedule a call this week")
+
+**If Step 5.5 ran:** for each contact, prefer the highest-scored signal from `company_scored_signals` as the hook over generic LinkedIn-post references. A score >= 70 signal anchored in real recent news is the strongest hook the demo can produce.
 
 ### Generation Process
 

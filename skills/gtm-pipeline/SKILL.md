@@ -204,17 +204,24 @@ Print the standardized Run Summary (from conventions.md) and ask:
 
 ## Step 6 — Customize Per Client
 
-For n8n-backed steps, customize:
-
-### ICP Scoring (company-enrichment Phase 2)
+### ICP Scoring (company-enrichment Phase 2 — n8n-backed)
 - Create/connect a Google Doc with the client's ICP definition
 - Or write to `context/icp.md` and use that as the reference
 - Adjust score threshold (default: >= 70) based on selectivity
 
-### Signal Assessment (signal-search)
-- Replace the offering section in the Signal Assessment user prompt with the client's value proposition
-- Adjust the web search objective query for client-specific signal types
-- Adjust Firecrawl crawl prompt if the client's signals differ from the default
+### Signal Assessment (signal-search — script-based)
+
+Signal-search runs `~/.claude/skills/gtm-signal-search/signal_search.py`. Universal templates (extraction prompts, scoring rubric, request shapes) are baked into the script. Client-specific prompts come from three context files:
+
+- `context/icp.md` — ICP definition (typically written by `gtm-setup`)
+- `context/offering.md` — what we sell, value props (used in the scoring prompt). If absent, the script falls back to `context/profile.md`.
+- `context/signal_criteria.md` — bulleted list of signal types relevant to this offering (used in web search objective + extraction prompts)
+
+Before invoking signal-search:
+1. Confirm all three files exist; collect any missing pieces from the user
+2. Pick which optional sources to enable (`--firecrawl`, `--parallel-enrichment`) based on whether on-site content / structured fields matter for this client
+
+No n8n workflow edits are required for signal-search anymore — the script reads everything from `context/` at runtime.
 
 ---
 

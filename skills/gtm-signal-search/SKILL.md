@@ -1,11 +1,11 @@
 ---
 name: gtm-pipeline:signal-search
-description: Find buying intent signals for target companies and score them for purchase intent. Four parallel sources: Parallel web search, Firecrawl website crawl, Parallel enrichment (structured), LinkedIn Job Exporter. Signal Assessment LLM scores 1-100. Runs standalone or in either pipeline workflow — does NOT require ICP scoring as input. Also triggers on "signal search", "find signals for", "buying intent".
+description: Find buying intent signals for target companies and score them for purchase intent. Runs a Python script (signal_search.py) that orchestrates Parallel web search (always on), Firecrawl crawl (opt-in), Parallel structured enrichment (opt-in), and a Signal Assessment LLM that scores 1-100. Universal templates live in the script; client-specific prompts come from the working directory's context/ files. Runs standalone or in either pipeline workflow — does NOT require ICP scoring as input. Also triggers on "signal search", "find signals for", "buying intent".
 ---
 
 # Signal Search
 
-Find buying intent signals for target companies. Scores each signal for relevance and buying intent.
+Find buying intent signals for target companies and score each 1–100. Universal extraction prompts, scoring rubric, and request shapes are baked into `signal_search.py` (ported from the live n8n workflow `lE1svjQ5TrgZ0bQy`). Anything client-specific — what we sell, who the ICP is, what kinds of signals matter — is loaded from `{client-slug}-gtm/context/` files at runtime.
 
 **Read `~/.claude/skills/gtm-pipeline/_shared/conventions.md` before executing.**
 
@@ -13,403 +13,207 @@ Find buying intent signals for target companies. Scores each signal for relevanc
 
 ## When to Use
 
-Standalone or within either pipeline workflow. **Does not require ICP scoring** — ICP score is just an upstream filter in the Company-First workflow, not a signal-search input.
-
 - **Standalone:** Score signals on any company list (raw or pre-filtered)
 - **Company-First workflow:** Run on ICP-scored companies (gate at `icp_score >= 70` to save credits)
-- **Signal-First workflow:** Run as the discovery step — find companies based on signal criteria
+- **Signal-First workflow:** Run as the discovery step
 
-The four critical components (in any of these contexts):
-1. Parallel web search (recent news/announcements)
-2. Firecrawl website crawl (on-site signals)
-3. Parallel enrichment (structured signal fields)
-4. Signal Assessment LLM prompt (scores 1–100)
-
-## Inputs
-
-| Input | Required | Source |
-|-------|----------|--------|
-| Company list CSV | Yes | Company list with at minimum `company_name`, `company_domain`, `company_website` |
-| ICP / signal criteria | Yes (Signal-First mode) | User prompt or `context/icp.md` |
-| Client offering description | Yes | For signal scoring customization |
-
-### Optional Pre-filtering (Company-First mode)
-
-To save credits when running on a large company list, gate by ICP score upstream:
-- `icp_score >= 70`
-- `website` not empty
-- `type` in [Startup, Scaleup] (if available)
-
-Skip this gate when running standalone or in Signal-First mode.
+The skill does not require ICP scoring as input. It does require an ICP definition (text) so the scoring step understands fit.
 
 ---
 
-## Signal Types
+## The Three Required Context Files
 
-| Signal | Example | Typical Intent |
-|--------|---------|---------------|
-| Funding / acquisitions | Series A, budget allocation for ops/tech | High |
-| Leadership changes | New CXO, VP Ops, Head of Digital | High |
-| Hiring signals | Job ads for ops/automation/AI/RevOps | High |
-| Digital transformation | AI adoption, process automation, tech stack changes | High |
-| Scaling challenges | Team expansion, manual process bottlenecks | Medium |
-| Partnerships / launches | Product launches requiring operational scaling | Medium |
+Before the script can run, the working directory must contain:
+
+```
+{client-slug}-gtm/context/
+├── icp.md             ← ICP definition (industries, geography, size, roles, exclusions)
+├── offering.md        ← What we sell, to whom, key value props (used in the scoring prompt)
+└── signal_criteria.md ← Bulleted list of signal types that indicate buying intent for THIS offering
+```
+
+If any of these are missing, **collect them from the user before running the script.** Do not invent them. Do not copy them from a previous client's gtm folder.
+
+**Fallback:** If `offering.md` is missing but `profile.md` exists (written by `gtm-setup`), the script will use `profile.md` instead. Prefer `offering.md` when possible — `profile.md` is broader (includes tone, customer segments, etc.) and produces a noisier scoring prompt. If `profile.md` is the only thing available, consider asking the user to extract the offering-specific paragraphs into a dedicated `offering.md`.
+
+### Step 1 — Check for context files
+
+```bash
+ls {client-slug}-gtm/context/
+```
+
+If `icp.md`, `offering.md`, and `signal_criteria.md` all exist, proceed to Step 4.
+
+### Step 2 — Ask the user for what's missing
+
+Use AskUserQuestion (or a direct prose ask) to collect each missing piece. Suggested wording for each:
+
+**ICP (`icp.md`):**
+- Industries (include / exclude)
+- Geography
+- Company size (employees, revenue)
+- Decision-maker roles
+- Anything else that disqualifies a company (e.g. "must have a public website", "exclude pure consultancies")
+
+**Offering (`offering.md`):**
+- What you sell (one paragraph)
+- The 3–5 main capabilities
+- Who it's for (target buyer profile)
+- The primary outcome you deliver
+- Any flagship product or differentiator
+
+**Signal criteria (`signal_criteria.md`):**
+A bulleted list of signal types that imply buying intent **for this specific offering**. The user should answer the question: *"What would a company be doing right now that suggests they need our product?"*
+
+Common categories — adapt to the offering, do not paste verbatim:
+- Funding / acquisitions tied to relevant budget
+- New leadership in relevant roles
+- Hiring for roles adjacent to the problem we solve
+- Technology adoption / migration relevant to our offering
+- Stated pains, transformation projects, or efficiency goals
+- Product launches that imply the underlying need
+- Vendor consolidation / SaaS spend signals
+
+### Step 3 — Save the context files
+
+Write each user-supplied answer to its file. Keep them concise but complete — the LLM sees these on every scoring call.
+
+### Step 4 — Pick which sources to enable
+
+Use AskUserQuestion to confirm. Defaults:
+
+| Source | Default | When to enable |
+|--------|---------|----------------|
+| Parallel web search | ON (always) | — |
+| Firecrawl website crawl | OFF | Enable when **on-site content matters** — e.g. the offering targets companies where careers pages, blog, or product pages reveal the buying signal. Skip for generic prospects where news is enough. |
+| Parallel structured enrichment | OFF | Enable when **structured fields are required downstream** — funding stage, hiring signals with job URLs, tech stack indicators that need to live in their own CSV columns. Skip if the scored signals JSON is enough. |
+
+### Step 5 — Run the script
+
+```bash
+export $(grep -E 'PARALLEL_API_KEY|OPENROUTER_API_KEY|FIRECRAWL_API_KEY|GEMINI_API_KEY' "$GTM_ENV_PATH" | xargs) && \
+  python3 ~/.claude/skills/gtm-signal-search/signal_search.py \
+    --client-dir {client-slug}-gtm \
+    --limit 5 \
+    [--firecrawl] \
+    [--parallel-enrichment]
+```
+
+`$GTM_ENV_PATH` is set in `~/.claude/skills/gtm-pipeline/_shared/local.md` (default for this machine: `/Users/paulraben/Sales Agent Projects (Remote)/.env`). All keys live there with the other GTM skill keys — do not maintain a separate env file for signal-search.
+
+`GEMINI_API_KEY` is **optional** — only needed if you want a Gemini fallback when OpenRouter calls fail (see Models section below).
+
+Start with `--limit 5` as a test batch. Review the output, then re-run without `--limit` for the full list.
+
+### Step 6 — Review and log
+
+Open `csv/intermediate/signals.csv`. Inspect actual rows for 2–3 companies:
+- Do `scoredSignals` cite real news/website content, not hallucinations?
+- Are `domain_verified=false` signals correctly zeroed?
+- Does `overallSummary` give an actionable outreach hook?
+
+Append a run summary to `run_log.md` per `conventions.md` (records processed, hit rate, sources enabled, cost notes, quality observations).
 
 ---
 
-## Signal Sources (Four Parallel Channels)
+## Script Arguments
 
-Run these in parallel per company. **Ask the user which sources to enable.**
-
-### Source 1: Parallel Web Search
-
-**Node type:** Parallel web search (processor: `pro`, 15 results)
-
-**Objective query (customize per client):**
 ```
-Recent news, press releases, or announcements about {{ company }} ({{ website }}) from the past 4 months indicating:
-
-- Funding rounds, acquisitions, or budget allocation for digital/operations/sales tech
-- New leadership in operations, digital, IT, automation, or sales operations/enablement roles
-- Team expansion, scaling challenges, or growth announcements
-- Job ads for operations, AI, automation, sales ops, sales enablement, or RevOps roles
-- Digital transformation, automation projects, or tech stack changes
-- Operational challenges, process bottlenecks, or efficiency initiatives
-- Sales process overhauls, CRM implementations, or sales tech investments
-- Revenue growth targets, expansion into new markets, or aggressive scaling plans
-- Outreach automation, lead generation challenges, or conversion rate issues
-- SaaS costs, vendor consolidation, or tech spending optimization
-- Partnerships or product launches requiring operational or GTM scaling
-
-Focus on concrete business developments, not company descriptions. Prioritize signals relevant to operations, strategy, digital transformation, AI integration, sales/GTM/growth operations, or general decision-making (VPs, directors, executives).
+--client-dir PATH               {client-slug}-gtm working directory (required)
+--input-csv PATH                override input (default: csv/input/companies_raw.csv)
+--output-csv PATH               override output (default: csv/intermediate/signals.csv)
+--firecrawl                     enable Firecrawl website crawl
+--parallel-enrichment           enable Parallel structured enrichment
+--lookback-months N             freshness window (default: 4)
+--extract-model NAME            OpenRouter model for extraction (default: deepseek/deepseek-v4-flash)
+--scoring-model NAME            OpenRouter model for scoring (default: moonshotai/kimi-k2.5)
+--gemini-extract-model NAME     Gemini fallback model for extraction (default: gemini-3-flash-preview)
+--gemini-scoring-model NAME     Gemini fallback model for scoring (default: gemini-3-pro-preview)
+--limit N                       process at most N companies (for test batches)
+--workers N                     parallel workers (default: 3)
+--dry-run                       validate context + inputs without API calls
 ```
 
-**LLM extraction prompt (web search → structured signals):**
-```
-You are analyzing search results to extract relevant business developments and signals.
+**Always ask the user which models to use** if they have a preference. Defaults match the n8n workflow's cost split — cheap extract model, more capable scoring model.
 
-Extract content about recent company developments, avoiding generic descriptions or marketing material.
+### Models & Fallback
 
-Include:
-- Funding, acquisitions, budget announcements
-- Leadership changes, new hires, team expansion
-- Growth challenges, scaling initiatives
-- Technology implementations, digital transformation projects
-- Operational improvements, process changes
-- Partnerships, product launches, strategic initiatives
-- Executive statements about company direction or challenges
+| Role | Primary (OpenRouter) | Fallback (Gemini direct) |
+|------|----------------------|--------------------------|
+| Extraction (web search + Firecrawl) | `deepseek/deepseek-v4-flash` | `gemini-3-flash-preview` |
+| Signal scoring | `moonshotai/kimi-k2.5` | `gemini-3-pro-preview` |
 
-Exclude:
-- Generic company descriptions, mission statements, product features
-- Standard career pages or "about us" content
-- Individual LinkedIn profile summaries
-- Content that's purely promotional or marketing-focused
+The Gemini fallback fires only when:
+1. The OpenRouter call returns no parseable JSON, AND
+2. `GEMINI_API_KEY` is set in the env file.
 
-Extract the relevant content as written, preserving details, numbers, quotes, and context. Keep enough to understand what's happening and why it matters. For each signal, add a brief relevance note and include the date if available. Return output in English only.
-```
-
-**Output schema:**
-```json
-{
-  "signals": [
-    {
-      "content": "Full signal text with details, numbers, quotes",
-      "relevance": "Why this matters for the offering",
-      "source": "https://...",
-      "date": "2025-08-05"
-    }
-  ]
-}
-```
+If `GEMINI_API_KEY` is not set, an OpenRouter failure simply produces empty signals / a failed-scoring stub (with reason in `overallSummary`). Users can swap to any other model by passing `--extract-model` / `--scoring-model` — anything OpenRouter supports works.
 
 ---
 
-### Source 2: Firecrawl Website Crawl
+## Input CSV
 
-**Request:**
-```json
-{
-  "url": "{{ website }}",
-  "sitemap": "include",
-  "crawlEntireDomain": false,
-  "limit": 15,
-  "allowSubdomains": true,
-  "excludePaths": [
-    "privacy/*", "data/*", "impressum/*", "legal/*", "terms/*",
-    "agb/*", "datenschutz/*", "dsgvo/*", "gdpr/*", "cookie*",
-    "contact/*", "kontakt/*", "faq/*", "support/*",
-    "login/*", "signup/*", "register/*", "checkout/*", "cart/*", "shop/*"
-  ],
-  "prompt": "AI/automation investment signals from past 4 months: funding rounds, acquisitions, launches, challenges, job postings for operations/tech/ai/gtm roles, new executives, expansion/growth plans, technology/ai initiatives. Can be pages containing news, blog, career, press, investors etc.",
-  "scrapeOptions": {
-    "formats": ["markdown"],
-    "onlyMainContent": true,
-    "excludeTags": ["img", "picture", "footer", "nav", "header", "aside"]
-  }
-}
+Default location: `csv/input/companies_raw.csv`. Required columns (the script tolerates alternative names):
+
+| Canonical | Alternatives accepted |
+|-----------|----------------------|
+| `company_name` | `name` |
+| `company_website` | `website` |
+| `company_domain` | (derived from website if missing) |
+
+All other columns in the input CSV are preserved in the output.
+
+---
+
+## Output CSV
+
+`csv/intermediate/signals.csv` — original columns + these signal columns:
+
 ```
-
-**LLM extraction prompt (crawled markdown → signals):**
-```
-Extract content indicating potential need for automation, AI implementation, or workflow optimization.
-
-Look for:
-- Team growth, new hires in operations/digital/tech roles
-- Scaling challenges, process bottlenecks, efficiency goals
-- Digital transformation initiatives or tech adoption plans
-- Manual processes, workflow pain points, operational inefficiencies
-- SaaS costs, subscription management, vendor consolidation efforts
-- Product launches, new services requiring operational support
-- Compliance requirements, data handling challenges
-- Customer service scaling, lead management issues
-- Content production workflows, marketing automation gaps
-- Recent company milestones indicating growth phase
-
-Do not extract:
-- Generic company descriptions or evergreen content
-- Old news (older than 4 months)
-- Vague statements without specific facts: "we are hiring", "we are growing" only if backed by a fact/figure
-
-For each finding: extracted snippet + source URL. If no signals found, return:
-{"websiteSignals": [{"snippet": "No website signals found", "ogUrl": ""}]}
-Return all results in English only.
-```
-
-**Output schema:**
-```json
-{
-  "signals": [
-    {
-      "snippet": "Relevant text excerpt",
-      "ogUrl": "https://..."
-    }
-  ]
-}
+overallScore         — 0–100 aggregate buying intent
+signalCount          — number of distinct scored signals
+scoredSignals        — JSON array of {date, summary, score, domain_verified, reasoning, keyInsight}
+overallSummary       — one-line actionable take
+websiteSignals       — JSON array from Firecrawl extraction (empty if --firecrawl off)
+webSearchSignals     — JSON array from Parallel web search extraction
+parallelEnrichment   — JSON object from Parallel enrichment (empty if not enabled)
+lastRun              — YYYY-MM-DD
 ```
 
 ---
 
-### Source 3: Parallel Enrichment (Structured Signal Data)
+## Universal Templates (Inside The Script)
 
-Use when you need structured, non-standard fields as signal inputs — funding stage, hiring signals with job URLs, tech stack indicators, digital initiatives.
+These are baked into `signal_search.py` and you should not need to edit them per client. They describe HOW to extract and score, not WHAT the user cares about.
 
-**Node type:** Parallel task enrichment, processor: `core`
-**Disabled by default** — enable when structured signal fields are needed.
+- **Parallel web search request:** objective shape, `mode: one-shot`, `max_results: 12`, `source_policy.after_date`
+- **Firecrawl crawl request:** sitemap include, `limit: 15`, universal exclude paths (privacy/legal/contact/login/etc.), markdown only main content
+- **Web search extraction prompt:** include/exclude framing, company-anchored ("If the company is not mentioned in a result, exclude that result")
+- **Firecrawl extraction prompt:** "do not extract" list (generic descriptions, old news, vague statements), structured output schema
+- **Signal Assessment system prompt:** High/Medium/Low Intent rubric, "cut through the buzz" guard, inference caution, domain verification
+- **Signal Assessment output schema:** `{overallScore, signalCount, scoredSignals[], overallSummary}`
+- **Freshness gating:** double-gated — once in Parallel `after_date`, once in `filter_crawl_pages_by_freshness()` (mirrors the n8n `Filter out old` JS code)
+- **Domain verification:** if a signal's `domain_verified` is `false`, the script automatically zeros its score before writing
 
-**Input per company:**
-```json
-{
-  "company_name": "{{ name }}",
-  "website_url": "{{ website }}",
-  "domain": "{{ domain }}",
-  "linkedin_url": "{{ linkedInCompanyUrl }}",
-  "location": "{{ location }}",
-  "description": "{{ description }}"
-}
-```
-
-**Output schema (customize — add/remove fields per client):**
-```json
-{
-  "recent_funding_round": "Series A / Seed / Grant / IPO or null",
-  "recent_funding_amount": "Amount in USD or null",
-  "funding_stage": "bootstrapped | seed | series_a | series_b_plus | private_equity | public",
-  "hiring_signals": [
-    {
-      "job_title": "Operations Manager",
-      "job_url": "https://...",
-      "posted_at": "2025-08-01"
-    }
-  ],
-  "digital_initiatives": [
-    {
-      "title": "CRM migration announced",
-      "description": "...",
-      "source_url": "https://...",
-      "date": "2025-07-15"
-    }
-  ],
-  "tech_stack_indicators": ["Salesforce", "Zapier", "HubSpot"]
-}
-```
-
-Output feeds into Signal Assessment scoring as `parallelEnrichment.output`.
-
-**Always ask which processor to use** before running Parallel tasks.
+If any of these templates need to evolve (e.g. the n8n workflow's scoring rubric is updated), edit the constants at the top of `signal_search.py`.
 
 ---
 
-### Source 4: LinkedIn Job Exporter (PhantomBuster)
+## Cost Notes
 
-Scrape job postings matching criteria (operations, AI, automation, RevOps, etc.).
+- Parallel web search (`pro` is unused here; we use the default `one-shot` mode): ~1 credit per company
+- Firecrawl crawl (15 pages, markdown only): ~15 credits per company
+- Parallel enrichment (`processor: core`): ~5 credits per company
+- OpenRouter extract calls: ~$0.001–0.003 per company (cheap model)
+- OpenRouter scoring call: ~$0.005–0.015 per company (kimi-k2)
 
-**Phantom Script:** LinkedIn Search Export (jobs mode) — config key `PB_AGENT_JOB_SEARCH` in `_shared/local.md`
-**Input:** Search URLs defined per geography/role (e.g. in a Google Sheet or CSV)
-
-```
-Auth: X-Phantombuster-Key-1: <key>
-Launch:  POST /api/v2/agents/launch
-Poll:    GET /api/v2/agents/fetch?id=<agent_id>
-Result:  GET /api/v2/containers/fetch-result-object
-```
-
-Output: job titles, posting dates, company names — used as hiring intent signals.
-
----
-
-## Signal Assessment (Scoring)
-
-All signals from the four sources merge → LLM agent scores each signal 1–100.
-
-**LLM:** OpenRouter — **ask user which model** (default suggestion: `moonshotai/kimi-k2-thinking` as used in existing n8n flow)
-
-### System Message
-
-```
-You are a B2B sales intelligence analyst evaluating buying intent signals. Your job is to assess how likely a company is to purchase based on recent developments.
-
-Analyze each signal and assign a buying intent score from 1-100:
-
-High Intent (70-100):
-- Recent funding with budget allocated to operations/tech/digital
-- Explicit pain points matching the solution
-- New leadership in relevant roles (operations, digital, IT)
-- Active transformation projects or stated automation goals
-- Urgent timelines or immediate needs mentioned
-
-Medium Intent (40-69):
-- Team expansion indicating growing operational complexity
-- Technology adoption or integration initiatives
-- Partnership/acquisition requiring process consolidation
-- General statements about efficiency or productivity goals
-- Industry pressures requiring operational changes
-
-Low Intent (1-39):
-- Generic hiring (every company says they are hiring on career pages)
-- Generic growth announcements without operational context
-- Developments not clearly related to operational needs
-- Vague or aspirational statements without concrete plans
-- Signals from >6 months ago
-- No clear connection to decision-making or budget
-- ATTENTION: If the website or search signal data is specifically about a company with the same name but mentions a different website, than the website/domain we are assessing the signal for, DO NOT consider that signal in the assessment
-
-Cut through the buzz. Every company depicts itself as growing on their website. Identify signs of specific needs or real pains. Inconclusive statements with buzzwords are not enough.
-
-Consider the contact person's role when available — signals more relevant to their domain score higher.
-
-For EACH signal, first verify it refers to the same company as {{ domain }}. If the signal mentions a different website or domain, set domain_verified: false for that signal.
-```
-
-### User Prompt (customize offering section per client)
-
-```
-## Company Profile
-Company: {{ name }}
-Website: {{ website }}
-Domain: {{ domain }}
-
-ATTENTION: If the website or search signal data is about a company with the same name but mentions a different website, or otherwise suggests that it's a different company than {{ website }}, DO NOT consider that signal in the assessment. Set domain_verified: false for such signals — they will be automatically scored 0.
-
-## Our Offering
-[CUSTOMIZE — Replace with your value proposition. Example below.]
-
-Example:
-> We provide a [product category] for [target buyer]. We help companies that
-> are dealing with [primary pain point] by [the mechanism / approach].
->
-> We specialize in:
-> - [capability 1]
-> - [capability 2]
-> - [capability 3]
->
-> Target: [geography] companies in [industries] with [signals of fit].
-
-[END CUSTOMIZE]
-
-## Signals to Evaluate
-
-### 1. Website Signals
-{{ websiteSignals }}
-
-### 2. Web Search Signals
-{{ searchSignals }}
-
-### 3. Parallel Enrichment Data
-{{ parallelEnrichment.output }}
-
-## Task
-Evaluate each signal's buying intent for our offering. Return scored signals with reasoning.
-```
-
-### Output Schema
-
-```json
-{
-  "overallScore": 75,
-  "signalCount": 3,
-  "scoredSignals": [
-    {
-      "summary": "One sentence description of the signal",
-      "score": 82,
-      "domain_verified": true,
-      "reasoning": "Why this score — specific connection to offering",
-      "keyInsight": "Actionable takeaway for outreach hook"
-    }
-  ],
-  "overallSummary": "Overall assessment. Contact if in [role]. Best hook: [signal]."
-}
-```
-
----
-
-## Execution Protocol
-
-### 1. Select Sources
-Present the four sources to the user. Get approval on which to enable:
-- Source 1 (Parallel web search): recommended for all
-- Source 2 (Firecrawl crawl): recommended for all
-- Source 3 (Parallel enrichment): optional, enable for structured data needs
-- Source 4 (LinkedIn Jobs): optional, enable when hiring signals are key
-
-### 2. Customize Prompts
-- Swap offering section in Signal Assessment user prompt
-- Adjust web search objective for client-specific signals
-- Adjust Firecrawl crawl prompt if needed
-
-### 3. Test (3–5 companies)
-- Run enabled sources on 3–5 companies
-- Review raw signals and scored output
-- Check: are signals relevant? Is scoring calibrated? Are scores too high/low?
-
-### 4. Review with User
-- Present test company results with scored signals
-- Get approval on scoring quality and source selection
-
-### 5. Full Run
-- Process remaining companies
-- Save results incrementally
-- Log each batch to run_log.md
-
----
-
-## Output
-
-CSV at `csv/intermediate/signals.csv` with columns:
-```
-company_name, company_domain,
-overallScore, signalCount, scoredSignals, overallSummary,
-crawledContent, webSearch,
-recent_funding_round, recent_funding_amount, funding_stage,
-hiring_signals, digital_initiatives, tech_stack_indicators
-```
-
-All original company columns preserved.
+Order of magnitude: **web search only ≈ $0.01 per company; +firecrawl ≈ $0.05 per company; +parallel enrichment ≈ $0.08 per company.** Always test on 5 before the full batch.
 
 ---
 
 ## What's Missing (To Document)
 
-- PhantomBuster LinkedIn Jobs Scraper: full launch/poll/download API flow
-- Firecrawl Agent (`POST /v2/agent`) for Workflow 2 signal-first discovery
+- PhantomBuster LinkedIn Jobs Scraper as a fifth source (the n8n workflow has it conceptually but doesn't wire it in)
+- Firecrawl Agent (`POST /v2/agent`) for Signal-First discovery (find companies *by signal* without a starting company list)
 - Exa Websets via Pipe0 for signal-based company discovery
-- n8n workflow API for creating client-specific copies of the signal flow
+- Auto-fix retry on LLM JSON parse failure (currently fails to empty list — consider a one-shot retry-with-feedback)
