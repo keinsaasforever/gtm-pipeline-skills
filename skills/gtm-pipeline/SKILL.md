@@ -215,13 +215,13 @@ Signal-search runs `~/.claude/skills/gtm-signal-search/signal_search.py`. Univer
 
 - `context/icp.md` — ICP definition (typically written by `gtm-setup`)
 - `context/offering.md` — what we sell, value props (used in the scoring prompt). If absent, the script falls back to `context/profile.md`.
-- `context/signal_criteria.md` — bulleted list of signal types relevant to this offering (used in web search objective + extraction prompts)
+- `context/signal_criteria.md` — what counts as a signal for this offering: an **include** list + a short **"not a signal"** exclude list (used in the web-search objective + both extraction prompts)
 
 Before invoking signal-search:
-1. Confirm all three files exist; collect any missing pieces from the user
-2. Pick which optional sources to enable (`--firecrawl`, `--parallel-enrichment`) based on whether on-site content / structured fields matter for this client
+1. Confirm all three files exist; collect any missing pieces from the user. If `signal_criteria.md` is thin, **help the user construct it** (include + exclude + tuning params like max-age and result count) — see the signal-search skill's Step 2 for the interview.
+2. Pick which optional sources to enable (`--firecrawl` or `--firecrawl-pages-dir`, `--parallel-enrichment`) based on whether on-site content / structured fields matter for this client. Use `--firecrawl-pages-dir` (Firecrawl-via-MCP) when there is no `FIRECRAWL_API_KEY` in the env.
 
-No n8n workflow edits are required for signal-search anymore — the script reads everything from `context/` at runtime.
+No n8n workflow edits are required for signal-search anymore — the script reads everything from `context/` at runtime. Keys are injected via `_shared/resolve_env.sh` (resolves `$GTM_ENV_PATH` on any machine).
 
 ---
 
