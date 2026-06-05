@@ -138,14 +138,22 @@ These rules apply to every skill in the pipeline:
 
 **.env path:** Set `GTM_ENV_PATH` in `_shared/local.md`. Default fallback: `$HOME/.env.gtm`.
 
-Never read the .env file with the Read tool. Always inject keys at runtime via Bash:
+`GTM_ENV_PATH` is documented in `local.md` but is **not** auto-exported into the shell — a fresh shell has it unset, so `"$GTM_ENV_PATH"` silently expands to empty. Always `source` the resolver first; it sets `GTM_ENV_PATH` from (1) an existing env var, else (2) the `GTM_ENV_PATH=` line in `local.md`, else (3) `~/.env.gtm`:
+
 ```bash
-export $(grep KEY_NAME "$GTM_ENV_PATH" | xargs) && python3 script.py
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh"
 ```
 
-To inject multiple keys at once:
+Never read the .env file with the Read tool. Always inject keys at runtime via Bash, after sourcing the resolver:
 ```bash
-export $(grep -E 'PIPE0|FULLENRICH|BETTERCONTACT|PARALLEL|SERPAPI|APIFY' "$GTM_ENV_PATH" | xargs) && python3 script.py
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+  export $(grep -E '^KEY_NAME=' "$GTM_ENV_PATH" | xargs) && python3 script.py
+```
+
+To inject multiple keys at once (anchor patterns with `^` so values can't match):
+```bash
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+  export $(grep -E '^(PIPE0_API_KEY|FULLENRICH_API_KEY|BETTERCONTACT_API_KEY|PARALLEL_API_KEY|SERPAPI_KEY|APIFY_API_TOKEN)=' "$GTM_ENV_PATH" | xargs) && python3 script.py
 ```
 
 | Variable | Service | Used by |

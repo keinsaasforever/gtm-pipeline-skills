@@ -148,12 +148,13 @@ with open('csv/output/contacts_enriched.csv') as f, open('csv/input/companies_ra
 "
 
 # Run signal-search on the unique companies
-export $(grep -E 'PARALLEL_API_KEY|OPENROUTER_API_KEY|FIRECRAWL_API_KEY|GEMINI_API_KEY' "$GTM_ENV_PATH" | xargs) && \
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+export $(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY|FIRECRAWL_API_KEY|GEMINI_API_KEY)=' "$GTM_ENV_PATH" | xargs) && \
   python3 ~/.claude/skills/gtm-signal-search/signal_search.py \
     --client-dir {client-slug}-gtm
 ```
 
-For the demo, leave Firecrawl and Parallel enrichment **OFF** — web search + scoring is enough for a ~10-contact lead list. Enable Firecrawl only if on-site content (careers, blog) is the primary signal source.
+The `resolve_env.sh` source line ensures `$GTM_ENV_PATH` is set even in a fresh shell (see signal-search SKILL.md / conventions). For the demo, leave Firecrawl and Parallel enrichment **OFF** — web search + scoring is enough for a ~10-contact lead list. Enable Firecrawl only if on-site content (careers, blog) is the primary signal source; if this machine has Firecrawl only via MCP (no `FIRECRAWL_API_KEY`), use the `--firecrawl-pages-dir` route documented in the signal-search skill.
 
 ### Merge signals back into contacts
 
