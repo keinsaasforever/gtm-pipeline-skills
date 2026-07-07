@@ -30,6 +30,8 @@ Enrich contacts with work email, phone number, and/or LinkedIn URL. Returns an u
 
 When invoked from the demo flow: **email only, skip all phone providers entirely.**
 
+**Cloudflare:** BC and FE (like Pipe0) are Cloudflare-fronted — call them with `curl` + a browser `User-Agent` (conventions rule #8); never Python `requests`/`urllib`.
+
 ---
 
 ## Provider Selection
@@ -44,7 +46,18 @@ When invoked from the demo flow: **email only, skip all phone providers entirely
 | 2nd | **Pipe0 waterfall** | 60% (SA), 83% (DACH) | 1.0–3.5 cr/contact | ~3 min/20 contacts | Solid backup |
 | 3rd | **BetterContact** (email-only) | ~60% test / **14% production SA** | 0.35 cr/contact | 30–90 min | Not recommended — slow, unreliable production |
 
-**Recommended flow:** FullEnrich first → Pipe0 for FE misses → skip BC for email.
+**Recommended flow (email waterfall):** FE Enrich (v2) → BC → Pipe0 pipes → Amplemarket/Crustdata (last resort). FE is **email-first** because BC async email hit rate is low (~14% production SA). **Max 2 attempts per source**, then fall through. Mirrors conventions **People-Source Cadence**.
+
+### Domain-Identity Cross-Check (critical)
+
+Deliverability status is **blind to identity.** Providers return `DELIVERABLE` emails on the **wrong company's domain** (a genuine wrong-company hit — the exact "made-up address" failure clients fear). Provider status alone is **not** enough.
+
+**MANDATORY** before an enriched email is kept:
+- The email's domain must **belong to the target company** — match by **domain-root** against the target's known domain / company name.
+- If the domain is unfamiliar, **verify what it actually is** (e.g. scrape its title) before trusting it.
+- **Drop identity mismatches** even when status is `DELIVERABLE`.
+
+This is the real anti-"made-up-address" guard; the `sanitize.py` deliverability filter (below) is only the last net.
 
 ### Phone
 
@@ -97,10 +110,17 @@ When invoked from the demo flow: **email only, skip all phone providers entirely
 - Merge results
 
 ### 6. Final Output
-- Merge all provider results into single CSV
-- Add `email_source` and `phone_source` columns for traceability
-- Flag email status (deliverable, catch_all, undeliverable)
-- Write to `csv/output/contacts_enriched.csv`
+- Merge all provider results into `csv/intermediate/contacts_enriched.csv` — **keep every field** (`email_source`/`phone_source`, `email_status`, provider labels), per conventions rule #6
+- Confirm each email passed the **domain-identity cross-check** above before it can ship
+- **Sanitize before the lead-facing view** — run the shared sanitizer (do **not** reimplement); it drops bad emails, strips provider/source labels + internal status codes, and drops empty columns. See conventions **Output Sanitization**:
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.claude/skills/gtm-pipeline/_shared"))
+from sanitize import sanitize_rows
+clean, report = sanitize_rows(rows, email_policy="standard")  # "strict" also drops catch-all
+```
+- **Deliverability policy** is applied by `sanitize.py` via `email_policy`: default `standard` keeps DELIVERABLE + HIGH_PROBABILITY + CATCH_ALL and drops UNKNOWN/RISKY/invalid; `strict` additionally drops catch-all
+- Write the sanitized rows to `csv/output/contacts_enriched.csv`
 
 ---
 
@@ -154,6 +174,7 @@ for entry in result.get("data", []):
 ```
 
 ### Key Notes
+- Cloudflare-fronted — call with `curl` + a browser `User-Agent` (conventions rule #8); never Python `requests`/`urllib`
 - Base URL is `app.fullenrich.com` (NOT `api.fullenrich.com`)
 - Use v2 (not v1)
 - Max 100 contacts per batch
@@ -272,6 +293,7 @@ for entry in result.get("data", []):
 ```
 
 ### Key Notes
+- Cloudflare-fronted — call with `curl` + a browser `User-Agent` (conventions rule #8); never Python `requests`/`urllib`
 - Base URL: `app.bettercontact.rocks` (not `api.`)
 - Max 100 contacts per batch
 - Submit response key: `id` (not `task_id` or `request_id`)

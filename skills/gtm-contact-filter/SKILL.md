@@ -9,6 +9,8 @@ Classify and rank contacts from people-search output using a three-tier ICP scor
 
 **Read `~/.claude/skills/gtm-pipeline/_shared/conventions.md` before executing.**
 
+Filtering and ranking is **agent work run on the `sonnet` model** (see conventions "Model Routing" — contact filtering / ICP ranking). Classify in-context or via a Sonnet subagent; never shell out to a third-party LLM API.
+
 ---
 
 ## When to Use
@@ -79,6 +81,10 @@ Fully parameterized — client defines role keywords. Example structure:
 
 **C-level promotion rule:** If `company_employee_count < {client_clevel_threshold}` (e.g. 50), promote C-level from tier 5 → tier 3 (they're operational at small companies).
 
+**Assistant/support demotion (keyword-guard):** Demote to the reject tier when the title contains an assistant/support token — even if it *also* contains a decision-maker keyword. "Persönlicher Assistent des CEO" contains "CEO" but is **not** a decision-maker. Check the demotion token list before crediting any decision-maker keyword. Multilingual demotion tokens: `assistant`, `assistent`, `secretary`, `sekretär`, `sekretariat`, `referent`, `PA`, `EA`, `office manager`.
+
+**Don't trust provider seniority tags alone:** A provider may tag an IT/SAP VP as top seniority over the real ICP persona (e.g. an HR lead). Rank by local ICP-keyword / title-tier scoring, not the provider's seniority field. When multiple candidates exist per company, dump **all** of them to the review CSV rather than auto-picking one on the provider's tag.
+
 **Hard reject:** `job_tier >= hard_reject_threshold` (default: 6).
 
 **Missing title:** tier 6 (Unknown). Default threshold rejects tier 6. To allow missing-title contacts through, set `hard_reject_threshold: 7` in your ICP config.
@@ -112,6 +118,16 @@ Client defines min and max `company_employee_count`.
 Scan `company_specialities` for client-defined domain keywords.
 Count matches → `icp_kw_score` (0 = no match, no penalty).
 Missing specialities → `icp_kw_score = 0`.
+
+### F. Buying-Authority Locality (ICP refinement)
+
+Deprioritize entities where the decision-maker for the offering likely doesn't sit locally. Express as scoring signals, not hardcoded names:
+
+- **Captive / in-house unit of a larger parent** — buying authority sits at the parent, not the unit.
+- **Foreign-HQ subsidiary** — decisions (and budget) originate at the foreign HQ; the local entity is an executor.
+- **Minor side-function** — the target activity is a small side-function of the business, not a core line, so no dedicated local owner.
+
+Emit a `buying_authority_local` signal (or a small penalty added to the sort key) when one of these holds; use it to deprioritize, not to hard-reject.
 
 ---
 
@@ -162,6 +178,27 @@ The following columns are appended to all passed records:
 | `icp_kw_score` | Count of ICP keyword matches in specialities |
 | `priority_label` | Human-readable priority (e.g. "High", "Medium", "Low") |
 | `sort_key` | Composite sort value used for ranking |
+
+---
+
+## Demo / Small-Batch Mode
+
+For demo runs and any small batch, use this lightweight path **instead of hand-rolling a one-off `finalize.py`**. This mode owns dedup, best-N-per-company selection, and local title ranking so downstream skills receive a clean, standardized list.
+
+**Steps (in order):**
+
+1. **Dedup by LinkedIn URL — across the whole set, not per-company.** The same person can appear under two companies (same `linkedin_profile_url`); collapse those to one row. Normalize the URL (lowercase, strip trailing slash and query params) before comparing. Keep the row with the better company match / lower `job_tier`.
+2. **Local title ranking** — score by ICP-keyword and `job_tier` locally (apply the assistant/support demotion and the "don't trust provider seniority" rules above). Do **not** defer to the provider's seniority tag.
+3. **Best-N per company** — after ranking, keep the top **N per company (default 2–3)**. Configurable via `best_n_per_company` in `context/icp.md`.
+
+**Standardized output schema** (write to `csv/intermediate/contacts_filtered.csv`; a demo/review CSV may use the same columns):
+
+```
+full_name, job_title, company_name, linkedin_profile_url,
+job_tier, persona, icp_kw_score, priority_label, buying_authority_local
+```
+
+All original input columns are preserved alongside these; the columns above are the canonical, always-present set for a demo/small-batch pass.
 
 ---
 

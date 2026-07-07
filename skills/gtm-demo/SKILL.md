@@ -26,9 +26,9 @@ Generate a demo lead list of ~10 enriched contacts with personalized message exa
 
 ---
 
-## Step 1 — Parse the Prompt & Ask Discovery Questions
+## Step 1 — Parse the Prompt & Establish the ICP
 
-The webhook prompt describes the user's target audience. Before running anything, extract or ask for:
+The webhook prompt describes the user's target audience. Extract:
 
 **Must have:**
 - What do you sell / offer?
@@ -37,14 +37,29 @@ The webhook prompt describes the user's target audience. Before running anything
 - What tone? (formal vs. casual, examples if possible)
 - Is this for recruiting OR selling to customers?
 
-**If not in the prompt, infer or ask:**
-- Target job titles
-- Target location
-- Target company size or type
+**If not in the prompt, infer (do not stall):**
+- Target job titles, location, company size/type
 
-Do NOT proceed to search until ICP is clear enough to build a meaningful filter.
+**Auto-resolve the requester before interpreting the audience** (fixes the recurring "what do
+they even sell / why do they want this audience" gap):
+1. **Resolve the requester's own domain** from their email (e.g. `name@acme.de` → `acme.de`),
+   scrape/enrich it, and establish what *they* sell. Multi-offering companies: confirm **which
+   product line** the demo is for — the prompt's stated product can mismatch the real one.
+2. **Determine the relationship to the target audience** — a target term (e.g. "call centers")
+   is usually a segment they *sell to*, not what they are. Classify: sell-to / buy-from /
+   acquire / partner / recruit. Persona keywords derive from this, not from a guess.
 
-**Save ICP to:** `{client-slug}-gtm/context/icp.md`
+**Interactive vs deployed (headless):**
+- **Interactive:** if a must-have is genuinely ambiguous after auto-resolution, ask one concise
+  clarifying question. Otherwise proceed.
+- **Deployed / headless** (invoked via `claude -p` from the webhook — see Deployment): **never
+  block on questions.** Infer every field from the prompt + requester-domain research, record
+  assumptions in `context/icp.md` under an "Assumptions" heading, and proceed end-to-end.
+
+Do NOT proceed to search until the ICP is clear enough to build a meaningful filter.
+
+**Save ICP to:** `{client-slug}-gtm/context/icp.md` (include the offering, the relationship
+classification, and any headless assumptions).
 
 ---
 
@@ -58,9 +73,12 @@ Create the `{client-slug}-gtm/` directory structure as defined in `conventions.m
 
 Use the **people-search** skill to find ~10–15 contacts.
 
-**Provider selection for demo:**
-- Prefer **BetterContact Lead Finder** or **FullEnrich Finder** — both return LinkedIn URLs directly, needed for email enrichment
-- If no company list (persona-based prompt), use **Parallel FindAll** or **BC Search**
+**Provider selection for demo:** follow the finder cadence in `conventions.md` → People-Source
+Cadence — **FullEnrich Finder → BetterContact → Pipe0 → Amplemarket/Crustdata (last resort)**,
+max 2 attempts/source, FE-first for SME/owner-led/non-English segments. Both FE and BC return
+LinkedIn URLs directly (needed for email enrichment). If no company list (persona-based prompt),
+use **Parallel FindAll** or **BC Search**. For directory/scrape-sourced company lists, search by
+company **name** + location, never by exact domain (conventions #11).
 
 **Key fields to collect:**
 ```
@@ -241,24 +259,47 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 
 ---
 
-## Step 7 — Output
+## Step 7 — Sanitize & Output
 
-Deliver:
-1. **CSV** at `csv/output/contacts_enriched.csv`: lead data + generated messages
-2. **Google Sheet** (optional): formatted for easy review
+**Step 7a — Sanitize (mandatory, deterministic, no LLM).** `csv/intermediate/` keeps every field.
+Before building anything lead-facing, run the shared sanitizer so the recurring hand-scrubbing
+(provider labels, empty columns, bad emails, stale signals) happens automatically:
 
-### Output CSV Columns
+```python
+import sys, os
+sys.path.insert(0, os.path.expanduser("~/.claude/skills/gtm-pipeline/_shared"))
+from sanitize import sanitize_rows
+clean, report = sanitize_rows(rows, email_policy="standard", max_signal_age_days=60)
+# report → rows_dropped_bad_email, signals_dropped, columns_dropped, messages_trimmed
+```
+
+It drops bad-status emails (default keeps Deliverable/High-prob/Catch-all), strips provider/source
+labels + internal status codes, removes all-empty columns, drops stale/sourceless signals, and
+enforces message length + em-dash rules. See `conventions.md` → Output Sanitization. Write the
+result to `csv/output/`.
+
+**Step 7b — Deliverables** (build from the sanitized `csv/output/` only):
+1. **CSV** at `csv/output/contacts_enriched.csv`: lead data + generated messages (post-sanitize).
+2. **Card deck** (HTML): the parameterized keinsaas-style deck — one card per contact with
+   signal (source + date), decision-maker, and ready message. Drive it from the sanitized CSV +
+   `context/` files; do not hand-copy a prior client's deck. Assemble with the **sonnet** model.
+3. **Google Sheet** (optional): formatted for review.
+
+**Step 7c — Programmatic self-QA** (browser QA is often unavailable — never depend on a screenshot):
+assert card count == contact count; every signal card has a live source link + date; **zero empty
+fields / placeholders**; zero em-dashes; one email + one LinkedIn draft per card within char caps.
+
+### Output CSV Columns (post-sanitize; empty/internal columns auto-dropped)
 
 ```
 name, first_name, last_name, location, headline, summary,
-linkedin_url, email, email_status,
-company_name, job_title,
-post_1_content, post_1_date,
-post_2_content, post_2_date,
+linkedin_url, email, company_name, job_title,
+post_1_content, post_1_date, post_2_content, post_2_date,
 generated_message, char_count, has_posts
 ```
 
-Messages saved separately to `csv/output/messages.csv`.
+Messages saved separately to `csv/output/messages.csv`. **Delivery is gated** — write the cover
+email to a file; never send on the user's behalf without explicit go-ahead (`conventions.md` #12).
 
 ---
 
@@ -276,14 +317,45 @@ Messages saved separately to `csv/output/messages.csv`.
 
 ## Trigger Context
 
-**Webhook (demo form):** Free demo trigger — user describes their ICP in a text prompt. Run this skill with ~10 contacts and 2–4 message samples.
+**Webhook (demo form):** Free demo trigger — user describes their ICP in a text prompt. Run this skill with ~10 contacts and 2–4 message samples. See Deployment.
 
 **Stripe payment (full list):** After successful payment, run the full pipeline via the `pipeline` skill. See pipeline skill for orchestration.
+
+---
+
+## Deployment (headless webhook)
+
+When a website form submits a prompt (ICP/signals), the demo runs **headless** via the Claude
+Code CLI. The skill is orchestrator-agnostic; a thin runner is provided at
+`~/.claude/skills/gtm-pipeline/_shared/deploy/run_demo.sh` (see `_shared/deploy/README.md` for the full contract).
+
+**Invocation:**
+```bash
+claude -p "/gtm-pipeline:demo $PROMPT" --model sonnet --permission-mode acceptEdits \
+  --append-system-prompt "Headless demo run: never ask questions; infer per Step 1, record
+  assumptions in context/icp.md, run end-to-end, sanitize, and emit result.json."
+```
+
+**Input contract:** free-text prompt describing the offering + target audience; the requester's
+email (domain auto-resolved per Step 1). Optional JSON: `{ "prompt", "requester_email",
+"with_signals": bool, "max_contacts": 10 }`.
+
+**Output contract:** the run writes `{client-slug}-gtm/result.json`:
+```json
+{ "status": "ok", "client_slug": "...", "contacts": 10, "with_signals": true,
+  "deck_path": "csv/output/… .html", "csv_path": "csv/output/contacts_enriched.csv",
+  "assumptions": ["…"], "sanitize_report": { "...": 0 } }
+```
+
+**Headless rules:** never block on questions (Step 1); model routing per `conventions.md`
+(Sonnet orchestration/filtering/deck, Opus extraction/scoring/messages — signal-search runs
+`--llm-backend agent`, so the headless agent scores in-context, **no nested `claude -p`**);
+always run Step 7a sanitization; delivery stays gated (produce the deck/email, do not send).
 
 ---
 
 ## What's Missing (To Document)
 
 - LinkedIn post scraping via PhantomBuster API (launch, poll, download)
-- Automated webhook integration (currently manual trigger)
-- Stripe payment trigger integration
+- Stripe payment trigger integration (paid full-pipeline path)
+- Queue/concurrency layer in front of the webhook runner (the runner itself is provided under `deploy/`)
