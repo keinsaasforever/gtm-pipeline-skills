@@ -35,6 +35,7 @@ import csv
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -60,14 +61,27 @@ PARALLEL_TASK_GROUP_URL = "https://api.parallel.ai/v1/tasks/groups"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-# Models match the live n8n workflow lE1svjQ5TrgZ0bQy.
-# Override via --extract-model / --scoring-model or env vars.
+# LLM backend. Default "agent": this script does the DETERMINISTIC work only (Parallel
+# search, Firecrawl, freshness gate, CSV) and writes raw evidence per company for the calling
+# Claude agent to extract + score in-context per the rubric in SKILL.md — NO third-party LLM
+# API is called and no nested `claude -p` is spawned. This is the path used both interactively
+# and when the deployed webhook runs `claude -p "/gtm-pipeline:signal-search ..."`.
+# "claude-cli": fully autonomous run that shells out to `claude -p` for extraction+scoring
+# (for cron/webhook use with no agent in the loop). "openrouter": legacy autonomous path,
+# kept available for `main` (needs OPENROUTER_API_KEY). See SKILL.md "Model routing".
+DEFAULT_LLM_BACKEND = "agent"
+# claude-cli backend: model aliases resolve to the latest of each tier (no version pinning →
+# low maintenance). Opus for the judgement-heavy extraction + scoring (keinsaas routing).
+DEFAULT_CLAUDE_EXTRACT_MODEL = "opus"
+DEFAULT_CLAUDE_SCORING_MODEL = "opus"
+# Legacy OpenRouter path (used ONLY by --llm-backend openrouter; not a default). Kept for `main`.
 DEFAULT_EXTRACT_MODEL = "deepseek/deepseek-v4-flash"
 DEFAULT_SCORING_MODEL = "moonshotai/kimi-k2.5"
-# Gemini fallback (only used if OpenRouter fails AND GEMINI_API_KEY is set).
+# Gemini fallback (openrouter backend only, if GEMINI_API_KEY is set).
 DEFAULT_GEMINI_EXTRACT_MODEL = "gemini-3-flash-preview"
 DEFAULT_GEMINI_SCORING_MODEL = "gemini-3-pro-preview"
-DEFAULT_LOOKBACK_MONTHS = 4
+# Demo default is 2 months (~60 days). Signals older than this are not "buying intent".
+DEFAULT_LOOKBACK_MONTHS = 2
 DEFAULT_MAX_SEARCH_RESULTS = 12
 DEFAULT_CRAWL_LIMIT = 15
 DEFAULT_CRAWL_POLL_INTERVAL = 30
@@ -645,22 +659,79 @@ def gemini_chat(
         return None
 
 
+def _json_from_text(text: str) -> dict[str, Any] | None:
+    """Best-effort parse of a JSON object from model text (handles ```json fences / prose)."""
+    if not text:
+        return None
+    t = text.strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t, flags=re.DOTALL).strip()
+    try:
+        return json.loads(t)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", t, flags=re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except json.JSONDecodeError:
+                return None
+    return None
+
+
+def claude_cli_chat(
+    model: str,
+    system: str,
+    user: str,
+    timeout: int = 180,
+) -> dict[str, Any] | None:
+    """Autonomous structured LLM call via the Claude Code CLI in headless mode (`claude -p`).
+    Used ONLY by the 'claude-cli' backend (cron/webhook with no agent in the loop) — never
+    when an agent is already orchestrating (that path uses backend 'agent'). No third-party
+    API. Returns None on any failure so the caller degrades gracefully."""
+    cmd = [
+        "claude", "-p", user, "--model", model,
+        "--append-system-prompt", system + "\n\nRespond with ONLY a valid JSON object, no prose.",
+        "--output-format", "json",
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+    if r.returncode != 0 or not r.stdout:
+        return None
+    # `--output-format json` wraps the reply in an envelope with a "result" string field.
+    text = r.stdout
+    try:
+        env = json.loads(r.stdout)
+        if isinstance(env, dict) and "result" in env:
+            text = env["result"]
+    except json.JSONDecodeError:
+        pass
+    return _json_from_text(text)
+
+
 def llm_chat_with_fallback(
-    role: str,  # "extract" or "scoring" — picks the right Gemini model
+    role: str,  # "extract" or "scoring"
     system: str,
     user: str,
     cfg: "RunConfig",
     timeout: int = 120,
 ) -> dict[str, Any] | None:
-    """Try OpenRouter first; on None response, fall back to Gemini if a key is set."""
-    primary_model = cfg.extract_model if role == "extract" else cfg.scoring_model
-    out = openrouter_chat(primary_model, system, user, cfg.openrouter_key, timeout=timeout)
-    if out is not None:
-        return out
-    if not cfg.gemini_key:
-        return None
-    fallback_model = cfg.gemini_extract_model if role == "extract" else cfg.gemini_scoring_model
-    return gemini_chat(fallback_model, system, user, cfg.gemini_key, timeout=timeout)
+    """Dispatch a structured LLM call to the configured backend.
+    'agent' never reaches here — process_company handles that path as collect-only."""
+    if cfg.llm_backend == "claude-cli":
+        model = cfg.claude_extract_model if role == "extract" else cfg.claude_scoring_model
+        return claude_cli_chat(model, system, user, timeout=timeout)
+    if cfg.llm_backend == "openrouter":
+        primary_model = cfg.extract_model if role == "extract" else cfg.scoring_model
+        out = openrouter_chat(primary_model, system, user, cfg.openrouter_key, timeout=timeout)
+        if out is not None:
+            return out
+        if not cfg.gemini_key:
+            return None
+        fallback_model = cfg.gemini_extract_model if role == "extract" else cfg.gemini_scoring_model
+        return gemini_chat(fallback_model, system, user, cfg.gemini_key, timeout=timeout)
+    return None
 
 
 def extract_web_signals(
@@ -748,6 +819,9 @@ class RunConfig:
     use_firecrawl: bool
     use_parallel_enrichment: bool
     lookback_months: int
+    llm_backend: str
+    claude_extract_model: str
+    claude_scoring_model: str
     extract_model: str
     scoring_model: str
     gemini_extract_model: str
@@ -758,6 +832,8 @@ class RunConfig:
     gemini_key: str | None
     context: ClientContext
     max_results: int = DEFAULT_MAX_SEARCH_RESULTS
+    # Where the 'agent' backend writes per-company raw evidence JSON for the agent to score.
+    raw_evidence_dir: Path | None = None
     # When set, Firecrawl website pages are read from {dir}/{domain}.json instead of
     # being crawled via the Firecrawl API. Lets users without a FIRECRAWL_API_KEY supply
     # pages crawled through the Firecrawl MCP (or any other means). No key required.
@@ -792,22 +868,18 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
         result["overallSummary"] = "Skipped: missing company_name or website."
         return result
 
+    # ---- Collection (deterministic; no LLM) ----
     # Web search (always)
     search_resp = parallel_web_search(
         company_name, website, cfg.context.signal_criteria,
         cfg.lookback_months, cfg.parallel_key, cfg.max_results,
     )
     raw_results = search_resp.get("results", []) if isinstance(search_resp, dict) else []
-    search_signals = extract_web_signals(
-        raw_results, company_name, company_domain,
-        cfg.context.signal_criteria, cfg,
-    )
 
-    # Firecrawl website signals (optional). Two routes:
+    # Firecrawl website pages (optional). Two routes:
     #  (a) firecrawl_pages_dir set -> read pre-crawled pages from {dir}/{domain}.json
     #      (e.g. crawled via the Firecrawl MCP). No FIRECRAWL_API_KEY required.
     #  (b) use_firecrawl -> native crawl via the Firecrawl API (needs FIRECRAWL_API_KEY).
-    website_signals: list[dict] = []
     pages: list[dict] = []
     if cfg.firecrawl_pages_dir:
         pf = cfg.firecrawl_pages_dir / f"{company_domain}.json"
@@ -827,9 +899,6 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
                 pages = crawl_result.get("data", [])
     if pages:
         pages = filter_crawl_pages_by_freshness(pages, cfg.lookback_months)
-        website_signals = extract_website_signals(
-            pages, cfg.context.signal_criteria, cfg.lookback_months, cfg,
-        )
 
     # Parallel enrichment (optional)
     enrichment = None
@@ -838,7 +907,43 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
             company_name, website, company_domain, cfg.parallel_key,
         )
 
-    # Scoring (always)
+    # ---- 'agent' backend: collect-only. Persist raw evidence; the calling Claude agent
+    # extracts + scores it in-context per the SKILL.md rubric (no external LLM, no nested
+    # claude -p). Downstream sanitization drops any company left PENDING/unscored. ----
+    if cfg.llm_backend == "agent":
+        result["webSearchSignals"] = json.dumps(raw_results)
+        result["websiteSignals"] = json.dumps(pages)
+        result["parallelEnrichment"] = json.dumps(enrichment) if enrichment else ""
+        result["overallSummary"] = "PENDING_AGENT_PROCESSING"
+        if cfg.raw_evidence_dir:
+            try:
+                cfg.raw_evidence_dir.mkdir(parents=True, exist_ok=True)
+                (cfg.raw_evidence_dir / f"{company_domain or company_name}.json").write_text(
+                    json.dumps({
+                        "company_name": company_name,
+                        "company_domain": company_domain,
+                        "website": website,
+                        "lookback_months": cfg.lookback_months,
+                        "web_search_results": raw_results,
+                        "website_pages": pages,
+                        "parallel_enrichment": enrichment,
+                    }, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+            except OSError:
+                pass
+        return result
+
+    # ---- 'claude-cli' / 'openrouter' backends: extract + score autonomously ----
+    search_signals = extract_web_signals(
+        raw_results, company_name, company_domain,
+        cfg.context.signal_criteria, cfg,
+    )
+    website_signals: list[dict] = []
+    if pages:
+        website_signals = extract_website_signals(
+            pages, cfg.context.signal_criteria, cfg.lookback_months, cfg,
+        )
     scored = score_signals(
         company_name, company_domain, website, cfg.context.offering,
         website_signals, search_signals, enrichment, cfg,
@@ -875,14 +980,26 @@ def parse_args() -> argparse.Namespace:
                         "(no FIRECRAWL_API_KEY): the agent crawls and writes the page files.")
     p.add_argument("--parallel-enrichment", action="store_true",
                    help="Enable Parallel structured enrichment (extra cost; useful for funding/hiring data points)")
+    p.add_argument("--llm-backend", choices=["agent", "claude-cli", "openrouter"],
+                   default=DEFAULT_LLM_BACKEND,
+                   help="Where extraction+scoring happen. 'agent' (default): script collects "
+                        "evidence only; the calling Claude agent scores it in-context (no external "
+                        "LLM). 'claude-cli': autonomous via `claude -p`. 'openrouter': legacy path.")
+    p.add_argument("--raw-evidence-dir", type=Path,
+                   help="Where the 'agent' backend writes per-company raw evidence JSON "
+                        "(default: {client-dir}/csv/intermediate/signals_raw/)")
     p.add_argument("--lookback-months", type=int, default=DEFAULT_LOOKBACK_MONTHS,
-                   help=f"Max age of signals in months (default: {DEFAULT_LOOKBACK_MONTHS})")
+                   help=f"Max age of signals in months (default: {DEFAULT_LOOKBACK_MONTHS} ≈ 60 days)")
     p.add_argument("--max-results", type=int, default=DEFAULT_MAX_SEARCH_RESULTS,
                    help=f"Max Parallel web-search results per company (default: {DEFAULT_MAX_SEARCH_RESULTS})")
+    p.add_argument("--claude-extract-model", default=DEFAULT_CLAUDE_EXTRACT_MODEL,
+                   help=f"claude-cli backend: model for extraction (default: {DEFAULT_CLAUDE_EXTRACT_MODEL})")
+    p.add_argument("--claude-scoring-model", default=DEFAULT_CLAUDE_SCORING_MODEL,
+                   help=f"claude-cli backend: model for scoring (default: {DEFAULT_CLAUDE_SCORING_MODEL})")
     p.add_argument("--extract-model", default=DEFAULT_EXTRACT_MODEL,
-                   help=f"OpenRouter model for signal extraction (default: {DEFAULT_EXTRACT_MODEL})")
+                   help=f"openrouter backend only: extraction model (default: {DEFAULT_EXTRACT_MODEL})")
     p.add_argument("--scoring-model", default=DEFAULT_SCORING_MODEL,
-                   help=f"OpenRouter model for signal scoring (default: {DEFAULT_SCORING_MODEL})")
+                   help=f"openrouter backend only: scoring model (default: {DEFAULT_SCORING_MODEL})")
     p.add_argument("--gemini-extract-model", default=DEFAULT_GEMINI_EXTRACT_MODEL,
                    help=f"Gemini fallback model for extraction (default: {DEFAULT_GEMINI_EXTRACT_MODEL})")
     p.add_argument("--gemini-scoring-model", default=DEFAULT_GEMINI_SCORING_MODEL,
@@ -920,8 +1037,8 @@ def main() -> int:
     missing_keys = []
     if not parallel_key:
         missing_keys.append("PARALLEL_API_KEY")
-    if not openrouter_key:
-        missing_keys.append("OPENROUTER_API_KEY")
+    if args.llm_backend == "openrouter" and not openrouter_key:
+        missing_keys.append("OPENROUTER_API_KEY (required for --llm-backend openrouter)")
     if args.firecrawl and not args.firecrawl_pages_dir and not firecrawl_key:
         missing_keys.append("FIRECRAWL_API_KEY (required for --firecrawl without --firecrawl-pages-dir)")
     if missing_keys and not args.dry_run:
@@ -941,19 +1058,31 @@ def main() -> int:
     print(f"Sources enabled: web_search=ON (max_results={args.max_results}), "
           f"firecrawl={firecrawl_mode}, "
           f"parallel_enrichment={'ON' if args.parallel_enrichment else 'OFF'}")
-    print(f"Models: extract={args.extract_model}, scoring={args.scoring_model}")
-    if gemini_key:
-        print(f"Gemini fallback: extract={args.gemini_extract_model}, scoring={args.gemini_scoring_model}")
-    print(f"Lookback: {args.lookback_months} months")
+    print(f"LLM backend: {args.llm_backend}")
+    if args.llm_backend == "agent":
+        print("  → collect-only: this script writes raw evidence; the calling Claude agent "
+              "extracts + scores in-context (no external LLM). See SKILL.md 'Model routing'.")
+    elif args.llm_backend == "claude-cli":
+        print(f"  → autonomous via `claude -p`: extract={args.claude_extract_model}, "
+              f"scoring={args.claude_scoring_model}")
+    else:  # openrouter
+        print(f"  → legacy OpenRouter: extract={args.extract_model}, scoring={args.scoring_model}"
+              + (f" (Gemini fallback: {args.gemini_extract_model}/{args.gemini_scoring_model})" if gemini_key else ""))
+    print(f"Lookback: {args.lookback_months} months (≈ {args.lookback_months * 30} days)")
 
     if args.dry_run:
         print("DRY RUN — context + inputs validated, no API calls made.")
         return 0
 
+    raw_evidence_dir = args.raw_evidence_dir or (client_dir / "csv" / "intermediate" / "signals_raw")
+
     cfg = RunConfig(
         use_firecrawl=args.firecrawl,
         use_parallel_enrichment=args.parallel_enrichment,
         lookback_months=args.lookback_months,
+        llm_backend=args.llm_backend,
+        claude_extract_model=args.claude_extract_model,
+        claude_scoring_model=args.claude_scoring_model,
         extract_model=args.extract_model,
         scoring_model=args.scoring_model,
         gemini_extract_model=args.gemini_extract_model,
@@ -965,6 +1094,7 @@ def main() -> int:
         context=context,
         max_results=args.max_results,
         firecrawl_pages_dir=args.firecrawl_pages_dir,
+        raw_evidence_dir=raw_evidence_dir if args.llm_backend == "agent" else None,
     )
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -994,6 +1124,15 @@ def main() -> int:
         for r in results:
             writer.writerow({k: r.get(k, "") for k in fieldnames})
     print(f"Wrote {len(results)} rows to {output_csv}")
+    if args.llm_backend == "agent":
+        n_pending = sum(1 for r in results if r.get("overallSummary") == "PENDING_AGENT_PROCESSING")
+        print(f"\n{n_pending} companies are PENDING_AGENT_PROCESSING. Raw evidence per company:")
+        print(f"  {raw_evidence_dir}/<domain>.json (also inline in webSearchSignals/websiteSignals).")
+        print("NEXT (as the orchestrating agent, no third-party LLM): extract + score each "
+              "company's signals in-context per the SKILL.md rubric — enforce the freshness gate "
+              "(≤ lookback), require source_url + date per signal, treat incumbency as neutral/"
+              "negative not intent, and gate on geo/segment relevance — then write "
+              "overallScore/scoredSignals/overallSummary back into the CSV.")
     return 0
 
 

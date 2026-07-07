@@ -122,15 +122,111 @@ When a skill is invoked from the demo flow:
 These rules apply to every skill in the pipeline:
 
 1. **Plan and test in sandboxes** — validate request/response structure at zero cost before any production call
-2. **Test a few leads before the full batch** — 5–15 records, never the full list
+2. **Test a few leads before the full batch** — 5–15 records, never the full list. If the primary source returns 0 on the probe, switch source before spending the full batch (see People-Source Cadence).
 3. **Review results after each run** — inspect actual data rows (names, titles, locations, URLs), not just hit counts
-4. **Ask which model/processor to use** — never decide on AI models, APIs, or tools without asking first
+4. **LLM/judgement work is done by the agent** — extraction, scoring, filtering, and message generation run in-context (or via model-routed subagents), never via a third-party LLM API on the default path. See **Model Routing**. Do not silently swap models.
 5. **Never re-run before reviewing** — do not waste credits on duplicate runs
-6. **Save all API output fields** — never drop columns from API responses
+6. **Save all API output fields in `intermediate/`** — never drop columns from API responses there. The **lead-facing `output/` view is sanitized** (see Output Sanitization): provenance, statuses, and empty columns are stripped there, not in intermediate.
 7. **API keys via runtime injection** — never read `.env` files into context. Use: `export $(grep KEY_NAME /path/.env | xargs) && python3 script.py`
-8. **Pipe0: use curl** — Python requests/urllib blocked by Cloudflare
+8. **Cloudflare-fronted APIs: use curl** — Pipe0, BetterContact, and FullEnrich reject Python `requests`/`urllib` (Cloudflare blocks the TLS/UA signature, error 1010). Always call them with `curl` + a browser `User-Agent`. Never regenerate a urllib-based provider script.
 9. **Max 100 contacts per batch** — all enrichment providers (Pipe0, BC, FE)
 10. **Global domains require location filter** — BetterContact with `.com` for global brands returns worldwide results. Always add `lead_location` filter. Local ccTLD domains (`.co.za`, `.de`) are safe without it.
+11. **Directory/scrape-sourced company lists: search by NAME, validate by domain-root** — never filter enrichment providers by exact domain (a directory `acme.de` won't match a provider-indexed `acme.com` → both BC and FE return 0). Search by company name + location, then confirm each candidate against the target by domain-root or name token (`fe_company_name` cross-check) to guard generic names. See People-Source Cadence.
+12. **Delivery is gated** — writing a message/email to a file is fine; **sending on the user's behalf needs explicit go-ahead** every time.
+
+---
+
+## Model Routing
+
+LLM/judgement work (signal extraction, signal scoring, contact filtering, message generation,
+presentation assembly) is done by **the Claude agent**, not by a third-party LLM API. The same
+logic runs whether a human invokes a skill interactively or a webhook runs it headless — the
+only difference is how the agent is started.
+
+| Task | Model (alias → latest) | How it runs |
+|------|------------------------|-------------|
+| Contact filtering / ICP ranking | **sonnet** | agent or Sonnet subagent |
+| Signal extraction (from Parallel/Firecrawl output) | **opus** | agent or Opus subagent |
+| Signal scoring (buying intent 1–100) | **opus** | agent or Opus subagent |
+| Message generation | **opus** | agent or Opus subagent |
+| Presentation / deck assembly + copy polish | **sonnet** | agent or Sonnet subagent |
+
+- **Interactive (terminal):** the orchestrating agent does the work in-context, or spawns
+  model-routed subagents (Sonnet for filtering/presentation, Opus for extraction/scoring/messages).
+  **Never shell out to `claude -p`** from inside an interactive session (no nested CLI).
+- **Deployed (webhook):** a thin runner calls `claude -p "/gtm-pipeline:demo <prompt>"`. The
+  headless agent does the same work — `claude -p` is the *outer entrypoint*, so still no nesting.
+- **Fully autonomous scripts (cron/n8n, no agent):** may pass `--llm-backend claude-cli` to shell
+  `claude -p`. `--llm-backend openrouter` is a legacy path kept on `main` (needs `OPENROUTER_API_KEY`);
+  **not used by default.** No deepseek/OpenRouter/Gemini models on the default path.
+- Use model **aliases** (`sonnet`, `opus`) so runs track the latest tier without version-pinning.
+
+Scripts (`signal_search.py`, provider search/enrich, deck builder, `sanitize.py`) do only
+**deterministic** work: provider APIs, CSV I/O, dedup, scoring math, sanitization. Default
+`signal_search.py --llm-backend agent` collects evidence and leaves scoring to the agent.
+
+---
+
+## People-Source Cadence
+
+Finder/enricher waterfall — stop as soon as a source yields enough **relevant, identity-verified**
+contacts. **Max 2 attempts per source** (e.g. a title-token query then a name-only query), then
+fall through:
+
+1. **FullEnrich Finder** (0-credit search) — lead for SME / owner-led / non-English-market
+   segments (FE indexes these better than BC). Run union queries (title tokens, full titles,
+   name-only), dedupe by LinkedIn URL, filter locally.
+2. **BetterContact Lead Finder** — for broader / English-market / larger-company segments.
+3. **Pipe0 searches** — last-resort finder when FE+BC return 0 relevant candidates for a company
+   (keyed on the real domain, it recovers companies the others miss).
+4. **Amplemarket / Crustdata** — final tier, max 2 attempts each, for whatever still has no contact.
+
+**Fallback trigger = zero *relevant* contacts, not zero rows.** A provider can return many rows
+that are all a *different* company (fuzzy name collision) — cross-check each candidate's returned
+company (`fe_company_name`) against the target and count only identity-matches before deciding to
+fall through. Probe 3 companies before the full batch; if the primary source returns 0 on the
+probe, switch source first.
+
+---
+
+## Signal Quality
+
+A signal only counts as buying intent if **all** hold (enforced by the agent per the signal-search
+rubric, and re-checked by `sanitize.py`):
+
+- **Fresh:** within the lookback window (demo default ≤ 60 days / `--lookback-months 2`). Undated
+  signals never count as fresh. Stale-signal companies are **demoted to ICP-fit**, never force-fit.
+- **Sourced:** carries a live `source_url` **and** a parseable `date`. Drop anything unlinkable.
+- **Real:** the source snippet actually supports the claim (re-verify — a "CTO hiring" post can be
+  a mislabeled lab role). Geo/segment must match the ICP, not just be recent.
+- **Intent, not incumbency:** "already owns a competing/adjacent solution" is **neutral/negative**,
+  not hot intent — reposition as a complement/ICP-fit, don't score it as buying intent.
+
+---
+
+## Output Sanitization
+
+`csv/intermediate/` keeps everything. The lead-facing `csv/output/` (and any deck/email built from
+it) is sanitized by **`_shared/sanitize.py`** — a deterministic, no-LLM step every demo/outreach run
+applies before producing the deliverable:
+
+- **Drop bad emails** — keep only allowed deliverability statuses (default policy `standard`:
+  Deliverable + High-probability + Catch-all; `strict` also drops catch-all). The real
+  anti-"made-up-address" guard is the upstream **domain-identity cross-check** (people-enrichment):
+  a `DELIVERABLE` email on a domain that isn't the target's is a wrong-company hit — drop it.
+- **Drop stale/sourceless signals** — per Signal Quality above.
+- **Strip provenance** — provider/source labels (`source`, `fullenrich_finder`, `ccv_directory`),
+  internal status codes (`email_status`, `HIGH_PROBABILITY`), and technical columns never ship.
+- **Drop empty columns** — any column blank across all rows is removed (a demo CSV must never look
+  like failed enrichment).
+- **Message hygiene** — em-dashes → commas; enforce length caps at write time (LinkedIn ≤ 400,
+  email ≤ 450/500) by trimming at a sentence/word boundary, not by hand afterward.
+
+```python
+import sys; sys.path.insert(0, os.path.expanduser("~/.claude/skills/gtm-pipeline/_shared"))
+from sanitize import sanitize_rows
+clean, report = sanitize_rows(rows, email_policy="standard", max_signal_age_days=60)
+```
 
 ---
 
@@ -168,7 +264,7 @@ source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
 | `LINKEDIN_SESSION_COOKIE` | LinkedIn li_at cookie | all PhantomBuster agents |
 | `LINKEDIN_USER_AGENT` | Browser user agent | all PhantomBuster agents |
 
-Other credentials (OpenRouter, Firecrawl, Stripe) are requested when the corresponding skill runs.
+Other credentials (Firecrawl, Stripe) are requested when the corresponding skill runs. `OPENROUTER_API_KEY` is **legacy/optional** — needed only for `signal_search.py --llm-backend openrouter`; the default `agent` path needs no LLM key (see Model Routing).
 
 **PhantomBuster** scripts load vars in-script rather than via export+inject — see `_shared/phantombuster.md`.
 

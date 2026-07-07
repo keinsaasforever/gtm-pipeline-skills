@@ -12,3 +12,7 @@ skills/_shared/local.md
 # Environment files
 .env
 *.env
+
+# Python
+__pycache__/
+*.pyc

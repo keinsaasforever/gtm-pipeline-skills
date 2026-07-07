@@ -61,7 +61,7 @@ Env var: `SERPAPI_API_KEY`
 
 ### Company mode (have company list)
 
-**Default flow: BetterContact first → FullEnrich fallback if BC returns 0 contacts. For DACH SMEs, add a Pipe0 Amplemarket pass on whatever FE missed — different index, additive coverage.**
+**Finder cadence (segment-routed waterfall): FullEnrich Finder → BetterContact Lead Finder → Pipe0 searches → Amplemarket / Crustdata (last resort). Max 2 attempts per source (e.g. a title-token query then a name-only query), then fall through. Lead with FullEnrich for SME / owner-led / non-English-market segments (better indexed there); lead with BetterContact for broader / English-market / larger companies. Add a Pipe0 pass on whatever the finders missed — different index, additive coverage. See conventions "People-Source Cadence" for the full waterfall and fallback rule; the table below is per-provider mechanics and cost, not a fixed running order.**
 
 | Priority | Provider | Cost | LinkedIn URLs | Key Strength |
 |----------|----------|------|---------------|-------------|
@@ -137,6 +137,8 @@ Both BetterContact and FullEnrich dashboards offer **free search** without API c
 
 **Endpoint:** `POST https://app.fullenrich.com/api/v2/people/search`
 **Auth:** `Authorization: Bearer $FULLENRICH_API_KEY`
+**Cloudflare:** call with `curl` + a browser `User-Agent` — Python `requests`/`urllib` get blocked (error 1010). Never ship a urllib-based provider script. See conventions rule #8.
+**Domain-keyed index:** the Finder is keyed on company domain and misses orgs whose domain differs from the indexed one — **prefer name-based search** (`current_company_names` + location) over the domain filter; validate hits by domain-root or name token.
 
 ### Request
 ```json
@@ -186,20 +188,31 @@ Pagination: `offset` + `limit` (max 100/page, max offset 10,000). Beyond 10k: us
 
 ### Response
 Response fields are **nested** — `current_position_title` and `linkedin_url` do NOT exist at top level.
+
+⚠ **LinkedIn URL path gotcha:** the URL lives under `social_profiles.professional_network.url`, NOT `social_profiles.linkedin.url`. Older notes/snippets used `.linkedin.url` and silently returned empty strings for every row. Always parse `professional_network` first.
+
+Also: the seniority field is `seniority` (not `seniority_level`) at `employment.current.seniority`. Values include `Manager`, `Senior`, `Head`, `Director`, `VP`, `C-Level`.
+
 ```python
 people = response.get("people", [])
 for person in people:
-    name    = person.get("full_name", "")
-    title   = person.get("employment", {}).get("current", {}).get("title", "")
-    li_url  = (person.get("social_profiles", {}) or {}).get("linkedin", {}).get("url", "")
-    loc_obj = person.get("location", {})
-    location = f"{loc_obj.get('city', '')}, {loc_obj.get('country', '')}".strip(", ")
-    # company info also nested: person["employment"]["current"]["company"]["name"]
+    name        = person.get("full_name", "")
+    current     = (person.get("employment", {}) or {}).get("current", {}) or {}
+    title       = current.get("title", "")
+    seniority   = current.get("seniority", "")
+    social      = person.get("social_profiles", {}) or {}
+    li_url      = (social.get("professional_network", {}) or {}).get("url", "")
+    loc_obj     = person.get("location", {}) or {}
+    location    = f"{loc_obj.get('city', '')}, {loc_obj.get('country', '')}".strip(", ")
+    # company info also nested: current["company"]["name"], current["company"]["domain"]
 ```
 
 ### Key Notes
 - `current_company_linkedin_urls` filter accepts LinkedIn company URLs directly (e.g. `https://www.linkedin.com/company/dojo-tech/`) — **no domain lookup needed** when you have LinkedIn company URLs in your input CSV
 - Hit rate for EU SME audience (via LinkedIn URL filter): ~48% (15/31 companies). Very small/niche companies with few employees often have low FE index coverage — expect 0 results.
+- **Title filter is unreliable** — don't trust the API's title match. Query with **broad single-token titles** and score/filter roles **locally** in the response.
+- **The Finder search is 0-credit** (see conventions "People-Source Cadence") — run **union queries** (title tokens / full titles / name-only), then **dedupe by LinkedIn URL**.
+- **Drop the per-person `person_locations` filter** — it's often null in the index and silently returns zero results; filter location locally instead.
 
 ### Cost
 **0.25 credits per person** returned.
@@ -213,6 +226,7 @@ https://docs.fullenrich.com/api/v2/people/search/post
 
 **Endpoint:** `POST https://app.bettercontact.rocks/api/v2/lead_finder/async`
 **Auth:** `X-API-Key: $BETTERCONTACT_API_KEY`
+**Cloudflare:** call with `curl` + a browser `User-Agent` — Python `requests`/`urllib` get blocked (error 1010). Never ship a urllib-based provider script. See conventions rule #8.
 
 ### Submit
 ```json
@@ -484,7 +498,10 @@ All original input columns preserved. Always include a `source` column (e.g. `fu
 
 ## Key Rules
 
-- **Default flow: BC → FE fallback.** Run BetterContact first (cheaper fixed cost). If BC returns 0 filtered contacts, run FullEnrich as fallback. Track BC and FE credits separately.
+- **Finder cadence: FullEnrich → BetterContact → Pipe0 searches → Amplemarket / Crustdata (last resort), max 2 attempts per source then fall through.** Lead with FullEnrich for SME / owner-led / non-English-market segments; lead with BetterContact for broader / English-market / larger companies. Track each provider's credits separately. See conventions "People-Source Cadence".
+- **Fallback trigger = zero *relevant* contacts, not zero rows.** A finder can return many rows that are all a *different* company (fuzzy name collision). Cross-check each candidate's returned company (`fe_company_name`) against the target and count only identity-matches before falling through. **Probe 3 companies first**; if the primary source returns 0 relevant on the probe, switch source before the full batch.
+- **Directory/scrape-sourced company lists: search by NAME + location, never by exact domain.** A directory `acme.de` won't match a provider-indexed `acme.com` → 0 results. Validate each candidate by domain-root or name token. See conventions rule #11.
+- **Cloudflare: BC and FE need curl too.** Like Pipe0, BetterContact and FullEnrich are Cloudflare-fronted — Python `requests`/`urllib` get blocked (error 1010). Call all three with `curl` + a browser `User-Agent`; never ship a urllib-based provider script. See conventions rule #8.
 - **Two-tier search:** Always run Tier 1 (e-commerce/marketing titles). Only run Tier 2 (leadership) if Tier 1 returns 0 AND company is below traffic threshold (e.g. ≤ 200K monthly visits).
 - **Global domains require location filter** in BetterContact (`.co.za` safe; `.com` for global brands returns worldwide).
 - **BC is async** — submit then poll every 5s until `status == "terminated"`. Typical wait: 30–60s per request. Budget accordingly for large batches.

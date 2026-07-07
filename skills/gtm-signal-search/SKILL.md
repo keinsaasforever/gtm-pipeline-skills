@@ -120,23 +120,52 @@ Use the MCP route when this machine has Firecrawl only via MCP and no `FIRECRAWL
 
 ```bash
 # Resolve the .env path (from $GTM_ENV_PATH, else _shared/local.md, else ~/.env.gtm),
-# then inject only the keys this run needs.
+# then inject only the keys this run needs. Default backend "agent" needs ONLY PARALLEL_API_KEY.
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-export $(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY|FIRECRAWL_API_KEY|GEMINI_API_KEY)=' "$GTM_ENV_PATH" | xargs) && \
+export $(grep -E '^(PARALLEL_API_KEY|FIRECRAWL_API_KEY)=' "$GTM_ENV_PATH" | xargs) && \
   python3 ~/.claude/skills/gtm-signal-search/signal_search.py \
     --client-dir {client-slug}-gtm \
     --limit 5 \
-    --lookback-months 4 \
+    --lookback-months 2 \
     --max-results 12 \
     [--firecrawl | --firecrawl-pages-dir {client-slug}-gtm/firecrawl_pages] \
     [--parallel-enrichment]
 ```
 
-**Env path:** the `resolve_env.sh` helper finds your `.env` even when `GTM_ENV_PATH` isn't exported in the shell — it reads the `GTM_ENV_PATH=` line from `~/.claude/skills/gtm-pipeline/_shared/local.md` (the documented setup step), falling back to `~/.env.gtm`. All GTM keys live in that one file; do not maintain a separate env file for signal-search.
+**Backends (see Model Routing below):** the default `--llm-backend agent` makes the script
+**collect-only** — it runs Parallel/Firecrawl and writes raw evidence per company to
+`csv/intermediate/signals_raw/{domain}.json` (and inline in the CSV), leaving `overallScore`
+empty with `overallSummary = PENDING_AGENT_PROCESSING`. **You (the agent) then extract + score
+each company in-context** per the Agent Scoring Rubric below and write the scores back — no
+third-party LLM, no nested `claude -p`. This is the path both interactively and under a deployed
+`claude -p` webhook. For a fully autonomous run with no agent in the loop, pass
+`--llm-backend claude-cli` (shells `claude -p --model opus`) or the legacy `--llm-backend openrouter`.
 
-`GEMINI_API_KEY` is **optional** — only needed if you want a Gemini fallback when OpenRouter calls fail (see Models section below). `FIRECRAWL_API_KEY` is only needed for the native `--firecrawl` route, not for `--firecrawl-pages-dir`.
+**Env path:** the `resolve_env.sh` helper finds your `.env` even when `GTM_ENV_PATH` isn't exported — it reads the `GTM_ENV_PATH=` line from `~/.claude/skills/gtm-pipeline/_shared/local.md`, falling back to `~/.env.gtm`. All GTM keys live in that one file.
+
+`OPENROUTER_API_KEY`/`GEMINI_API_KEY` are needed **only** for `--llm-backend openrouter`. `FIRECRAWL_API_KEY` is only needed for the native `--firecrawl` route, not for `--firecrawl-pages-dir`.
+
+**Lookback default is 2 months (~60 days)** — signals older than that are not buying intent.
 
 Start with `--limit 5` as a test batch. Review the output, then re-run without `--limit` for the full list.
+
+### Step 5b — Agent Scoring Rubric (backend = `agent`)
+
+After the collect-only run, score each company yourself (use the **opus** model per Model Routing —
+directly, or an Opus subagent). Read the raw evidence from `csv/intermediate/signals_raw/{domain}.json`
+(or the `webSearchSignals`/`websiteSignals` columns). For each candidate signal, keep it only if **all**:
+
+- **Fresh** — within the lookback window (≤ `--lookback-months`). No parseable date ⇒ not fresh ⇒ drop.
+- **Sourced** — has a live `source_url` **and** a `date`. Drop unlinkable/undated signals.
+- **Real & on-target** — the source text actually supports the claim (re-read it; a "CTO hiring" post
+  can be a mislabeled lab role), and the geo/segment matches the ICP.
+- **Intent ≠ incumbency** — "already owns a competing/adjacent solution" is neutral/negative, not hot;
+  reposition as complement/ICP-fit.
+
+Then write `overallScore` (0–100), `signalCount`, `scoredSignals` (each with `source_url` + `date`),
+and a one-line actionable `overallSummary` back into `signals.csv`. Companies with **no** surviving
+signal are demoted to ICP-fit (score reflects that) — never force-fit a stale/weak signal as intent.
+Downstream `sanitize.py` drops any signal still lacking a source/date or left `PENDING`.
 
 ### Step 6 — Review and log
 
@@ -158,31 +187,33 @@ Append a run summary to `run_log.md` per `conventions.md` (records processed, hi
 --firecrawl                     enable Firecrawl website crawl via the Firecrawl API (needs FIRECRAWL_API_KEY)
 --firecrawl-pages-dir PATH      read pre-crawled pages from PATH/{domain}.json instead of the API (no key; MCP route)
 --parallel-enrichment           enable Parallel structured enrichment
---lookback-months N             max age of signals in months (default: 4)
+--llm-backend {agent,claude-cli,openrouter}   where extraction+scoring happen (default: agent)
+--raw-evidence-dir PATH         where the agent backend writes raw evidence (default: csv/intermediate/signals_raw/)
+--lookback-months N             max age of signals in months (default: 2 ≈ 60 days)
 --max-results N                 max Parallel web-search results per company (default: 12)
---extract-model NAME            OpenRouter model for extraction (default: deepseek/deepseek-v4-flash)
---scoring-model NAME            OpenRouter model for scoring (default: moonshotai/kimi-k2.5)
---gemini-extract-model NAME     Gemini fallback model for extraction (default: gemini-3-flash-preview)
---gemini-scoring-model NAME     Gemini fallback model for scoring (default: gemini-3-pro-preview)
+--claude-extract-model NAME     claude-cli backend: extraction model (default: opus)
+--claude-scoring-model NAME     claude-cli backend: scoring model (default: opus)
+--extract-model NAME            openrouter backend only: extraction model (legacy)
+--scoring-model NAME            openrouter backend only: scoring model (legacy)
+--gemini-extract-model NAME     openrouter backend only: Gemini fallback for extraction
+--gemini-scoring-model NAME     openrouter backend only: Gemini fallback for scoring
 --limit N                       process at most N companies (for test batches)
 --workers N                     parallel workers (default: 3)
 --dry-run                       validate context + inputs without API calls
 ```
 
-**Always ask the user which models to use** if they have a preference. Defaults match the n8n workflow's cost split — cheap extract model, more capable scoring model.
+### Model Routing
 
-### Models & Fallback
+Scoring/extraction is **agent work** — no third-party LLM on the default path. Models via aliases
+(`opus`/`sonnet` → always latest, no version pinning):
 
-| Role | Primary (OpenRouter) | Fallback (Gemini direct) |
-|------|----------------------|--------------------------|
-| Extraction (web search + Firecrawl) | `deepseek/deepseek-v4-flash` | `gemini-3-flash-preview` |
-| Signal scoring | `moonshotai/kimi-k2.5` | `gemini-3-pro-preview` |
+| Backend | When | How extraction + scoring run |
+|---------|------|------------------------------|
+| **`agent`** (default) | Interactive, or deployed via `claude -p "/gtm-pipeline:…"` | Script collects evidence; **you (the agent)** score it in-context with **opus** (or an Opus subagent) per the Agent Scoring Rubric. No LLM key, no nested `claude -p`. |
+| **`claude-cli`** | Cron/webhook with no agent in the loop | Script shells `claude -p --model opus`. Self-contained. |
+| **`openrouter`** | Legacy (kept on `main`) | `deepseek`/`kimi` via OpenRouter + optional Gemini fallback. Needs `OPENROUTER_API_KEY`. Unreliable for small/German orgs (returned empty/JSON-None across past runs) — prefer `agent`. |
 
-The Gemini fallback fires only when:
-1. The OpenRouter call returns no parseable JSON, AND
-2. `GEMINI_API_KEY` is set in the env file.
-
-If `GEMINI_API_KEY` is not set, an OpenRouter failure simply produces empty signals / a failed-scoring stub (with reason in `overallSummary`). Users can swap to any other model by passing `--extract-model` / `--scoring-model` — anything OpenRouter supports works.
+Do not silently swap models; the routing above is the convention (see `_shared/conventions.md` → Model Routing).
 
 ---
 
@@ -240,10 +271,9 @@ If any of these templates need to evolve (e.g. the n8n workflow's scoring rubric
 - Parallel web search (`pro` is unused here; we use the default `one-shot` mode): ~1 credit per company
 - Firecrawl crawl (15 pages, markdown only): ~15 credits per company
 - Parallel enrichment (`processor: core`): ~5 credits per company
-- OpenRouter extract calls: ~$0.001–0.003 per company (cheap model)
-- OpenRouter scoring call: ~$0.005–0.015 per company (kimi-k2)
+- **`agent` backend (default): no external LLM cost** — the agent scores in-context (counts as normal session tokens). `openrouter` backend (legacy): ~$0.006–0.018 per company.
 
-Order of magnitude: **web search only ≈ $0.01 per company; +firecrawl ≈ $0.05 per company; +parallel enrichment ≈ $0.08 per company.** Always test on 5 before the full batch.
+Order of magnitude (agent backend): **web search only ≈ $0.01 per company; +firecrawl ≈ $0.05 per company; +parallel enrichment ≈ $0.08 per company** (Parallel/Firecrawl credits only). Always test on 5 before the full batch.
 
 ---
 
