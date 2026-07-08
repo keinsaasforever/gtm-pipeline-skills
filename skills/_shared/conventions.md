@@ -157,8 +157,9 @@ only difference is how the agent is started.
 - **Deployed (webhook):** a thin runner calls `claude -p "/gtm-pipeline:demo <prompt>"`. The
   headless agent does the same work — `claude -p` is the *outer entrypoint*, so still no nesting.
 - **Fully autonomous scripts (cron/n8n, no agent):** may pass `--llm-backend claude-cli` to shell
-  `claude -p`. `--llm-backend openrouter` is a legacy path kept on `main` (needs `OPENROUTER_API_KEY`);
-  **not used by default.** No deepseek/OpenRouter/Gemini models on the default path.
+  `claude -p`. `--llm-backend openrouter` is a **dormant** legacy path kept on `main` — the code is
+  present but **inert**: the flag alone won't run it, `GTM_ALLOW_OPENROUTER=1` must also be set, else
+  the script errors out. No deepseek/OpenRouter/Gemini models run on any normal invocation.
 - Use model **aliases** (`sonnet`, `opus`) so runs track the latest tier without version-pinning.
 
 Scripts (`signal_search.py`, provider search/enrich, deck builder, `sanitize.py`) do only
@@ -191,9 +192,16 @@ probe, switch source first.
 
 ## Signal Quality
 
-A signal only counts as buying intent if **all** hold (enforced by the agent per the signal-search
-rubric, and re-checked by `sanitize.py`):
+Signals are scored on **two axes, in order** — proximity gates, offering-fit prioritizes — and only
+count as buying intent if **all** gates hold (enforced by the agent per the signal-search rubric,
+and re-checked by `sanitize.py`):
 
+- **Attributable / proximate (Axis 1 — the gate):** the development must genuinely **stem from this
+  specific company or the named person at it** — its own funding, hire, product, or stated project.
+  A generic industry/market/peer story that merely mentions or could apply to any similar company is
+  **not a signal** (score 0). Never invent a connection between sector news and the company; do not
+  bend a trend onto a lead. An adjacent actor (partner/customer/competitor) counts only if it forces
+  an action *at this company*.
 - **Fresh:** within the lookback window (demo default ≤ 60 days / `--lookback-months 2`). Undated
   signals never count as fresh. Stale-signal companies are **demoted to ICP-fit**, never force-fit.
 - **Sourced:** carries a live `source_url` **and** a parseable `date`. Drop anything unlinkable.
@@ -201,6 +209,10 @@ rubric, and re-checked by `sanitize.py`):
   a mislabeled lab role). Geo/segment must match the ICP, not just be recent.
 - **Intent, not incumbency:** "already owns a competing/adjacent solution" is **neutral/negative**,
   not hot intent — reposition as a complement/ICP-fit, don't score it as buying intent.
+
+**Offering fit (Axis 2 — priority + hook):** among signals that pass the gates, how tightly the
+development ties to what we sell sets the score band, the outreach priority, and the hook. Proximity
+decides *whether* to reach out; offering fit decides *how hard* and *with what hook*.
 
 ---
 

@@ -153,8 +153,17 @@ Start with `--limit 5` as a test batch. Review the output, then re-run without `
 
 After the collect-only run, score each company yourself (use the **opus** model per Model Routing —
 directly, or an Opus subagent). Read the raw evidence from `csv/intermediate/signals_raw/{domain}.json`
-(or the `webSearchSignals`/`websiteSignals` columns). For each candidate signal, keep it only if **all**:
+(or the `webSearchSignals`/`websiteSignals` columns). Score each candidate on **two axes, in order**:
 
+**Axis 1 — Attribution / proximity (the gate).** Does the development genuinely stem from *this*
+company (or the named person at it), or is it a generic industry / peer / market story bent onto it?
+- **Direct** (company or its named leader is the actor) → passes.
+- **Adjacent** (a named partner/customer/competitor acts) → keep only if it forces an action *at this
+  company*; otherwise drop.
+- **Generic** (sector trend, "companies like this…", a trend piece that merely lists the company) →
+  **not a signal. Score 0.** Never invent a connection between industry news and this company.
+
+Only a signal that passes Axis 1 proceeds. Then apply the remaining keep-gates:
 - **Fresh** — within the lookback window (≤ `--lookback-months`). No parseable date ⇒ not fresh ⇒ drop.
 - **Sourced** — has a live `source_url` **and** a `date`. Drop unlinkable/undated signals.
 - **Real & on-target** — the source text actually supports the claim (re-read it; a "CTO hiring" post
@@ -162,7 +171,14 @@ directly, or an Opus subagent). Read the raw evidence from `csv/intermediate/sig
 - **Intent ≠ incumbency** — "already owns a competing/adjacent solution" is neutral/negative, not hot;
   reposition as complement/ICP-fit.
 
-Then write `overallScore` (0–100), `signalCount`, `scoredSignals` (each with `source_url` + `date`),
+**Axis 2 — Offering fit (priority + hook).** For signals that pass Axis 1, how tightly does the
+development connect to what we sell? This sets the score band and the outreach hook: a company-real
+signal that directly implies our need = high-priority; a company-real signal only loosely related =
+low-priority ICP-fit, not hot intent. **Proximity decides *whether* to reach out; offering fit decides
+*how hard* and *with what hook*.**
+
+Then write `overallScore` (0–100), `signalCount`, `scoredSignals` (each with `source_url` + `date`
++ `attribution` of direct/adjacent/generic),
 and a one-line actionable `overallSummary` back into `signals.csv`. Companies with **no** surviving
 signal are demoted to ICP-fit (score reflects that) — never force-fit a stale/weak signal as intent.
 Downstream `sanitize.py` drops any signal still lacking a source/date or left `PENDING`.
@@ -211,7 +227,7 @@ Scoring/extraction is **agent work** — no third-party LLM on the default path.
 |---------|------|------------------------------|
 | **`agent`** (default) | Interactive, or deployed via `claude -p "/gtm-pipeline:…"` | Script collects evidence; **you (the agent)** score it in-context with **opus** (or an Opus subagent) per the Agent Scoring Rubric. No LLM key, no nested `claude -p`. |
 | **`claude-cli`** | Cron/webhook with no agent in the loop | Script shells `claude -p --model opus`. Self-contained. |
-| **`openrouter`** | Legacy (kept on `main`) | `deepseek`/`kimi` via OpenRouter + optional Gemini fallback. Needs `OPENROUTER_API_KEY`. Unreliable for small/German orgs (returned empty/JSON-None across past runs) — prefer `agent`. |
+| **`openrouter`** | Dormant legacy (kept on `main`, **inert**) | `deepseek`/`kimi` via OpenRouter + optional Gemini fallback. **Disabled by a kill switch:** the flag errors out unless `GTM_ALLOW_OPENROUTER=1` is also set. Needs `OPENROUTER_API_KEY`. Unreliable for small/German orgs (returned empty/JSON-None across past runs) — prefer `agent`. |
 
 Do not silently swap models; the routing above is the convention (see `_shared/conventions.md` → Model Routing).
 
