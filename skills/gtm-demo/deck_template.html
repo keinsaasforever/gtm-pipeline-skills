@@ -13,7 +13,12 @@
   Clone the two sample cards below (signal-first HOT, ICP-first FIT) once per contact.
   Delete the sig-hot block entirely for ICP-only contacts; keep a card's chevron + drafts.
   Keep it self-contained: no external JS, one <style>, fonts via Google Fonts CDN.
-  Language: DE or EN. In German, no em-dashes; start sentences with a pronoun.
+  Copy rules: NEVER name a third-party tool or data provider (enrichment vendor,
+  search/scrape provider, phone/email finder) anywhere in the rendered deck. A signal's
+  .sigsrc link cites the ORIGINAL publication (press release, careers page, news outlet),
+  never the tool that found it. The lead's own LinkedIn link is fine (it is their profile).
+  Language: DE or EN. German uses Du-form (informal du/dein), no em-dashes, and starts
+  sentences with a pronoun.
 -->
 <title>Lead-Demo · {{CLIENT_NAME}} | {{BRAND_NAME}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -93,8 +98,17 @@ main{padding:36px 0 16px}
 footer{background:var(--black);color:var(--white);padding:46px 0;margin-top:24px}
 footer h2{font-family:var(--fh);font-weight:400;font-size:34px}
 footer p{color:rgba(255,255,255,.7);margin-top:12px;max-width:70ch}
-.cta-btn{display:inline-block;margin-top:26px;background:var(--blue);color:#fff;font-family:var(--fb);font-weight:800;font-size:16px;letter-spacing:-.01em;text-decoration:none;padding:15px 30px;border-radius:12px;transition:opacity .15s ease}
-.cta-btn:hover{opacity:.9}
+/* Metallic CTA: 3-stop vertical gradient (bright top -> base -> dark bottom) reads as a
+   curved reflective surface; inset top highlight = specular sheen, inset bottom shadow = depth,
+   outer glow lifts it off the footer. Shades derive from --blue via color-mix, so recolouring
+   the brand accent restyles the whole button (matters on the white-label branch). */
+.cta-btn{display:inline-block;margin-top:26px;color:#fff;font-family:var(--fb);font-weight:800;font-size:16px;letter-spacing:-.01em;text-decoration:none;padding:15px 32px;border-radius:12px;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--blue) 68%,#fff) 0%,var(--blue) 46%,color-mix(in srgb,var(--blue) 78%,#000) 100%);
+  border:1px solid color-mix(in srgb,var(--blue) 60%,#000);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.45),inset 0 -2px 6px rgba(0,0,0,.32),0 6px 18px color-mix(in srgb,var(--blue) 40%,transparent);
+  text-shadow:0 1px 1px rgba(0,0,0,.35);transition:filter .12s ease,box-shadow .12s ease,transform .12s ease}
+.cta-btn:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 6px rgba(0,0,0,.32),0 9px 24px color-mix(in srgb,var(--blue) 50%,transparent)}
+.cta-btn:active{transform:translateY(1px);box-shadow:inset 0 2px 5px rgba(0,0,0,.4)}
 .foot-meta{font-size:12px;color:rgba(255,255,255,.4);margin-top:30px}
 @media(max-width:720px){.hero h1{font-size:31px}.stats{gap:24px}}
 @media print{body{background:#fff}.lead{break-inside:avoid;box-shadow:none}header,.hero,footer{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
@@ -102,6 +116,10 @@ footer p{color:rgba(255,255,255,.7);margin-top:12px;max-width:70ch}
 <header><div class="wrap"><div class="logo">{{BRAND_NAME}}</div><div class="htag">{{BRAND_TAGLINE}} · {{CLIENT_NAME}}</div></div></header>
 <section class="hero"><div class="wrap">
   <div class="eyebrow">Demo · {{CLIENT_NAME}} × {{BRAND_NAME}}</div>
+  <!-- Hero = the hook, not the manual. HERO_HEADLINE: short (<= ~7 words), outcome-first,
+       plain language, no jargon. HERO_INTRO: 1-2 short sentences on what they GET (the result:
+       ready-to-send outreach to the right people), never how the pipeline works or how leads
+       were sourced. Intrigue, do not overwhelm with technical detail. -->
   <h1>{{HERO_HEADLINE}}</h1>
   <p>{{HERO_INTRO}}</p>
   <div class="stats">
