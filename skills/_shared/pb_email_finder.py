@@ -66,6 +66,33 @@ PB_BATCH_SIZE = 50
 PB_STAGING_TAB = "pb_email_staging"
 
 
+def load_env_file(keys):
+    """Fill os.environ for `keys` from the GTM .env (GTM_ENV_PATH) without overriding
+    already-exported values or CLI flags. Loading in-script avoids the fragile
+    `export $(grep|xargs)` idiom, which mangles values containing spaces — e.g. a
+    Google cred path under `.../Sales Agent Projects (Remote)/...`. Mirrors the
+    in-script load convention in _shared/phantombuster.md."""
+    path = os.environ.get("GTM_ENV_PATH") or str(Path.home() / ".env.gtm")
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("export "):
+                    line = line[7:]
+                if "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k = k.strip()
+                if k in keys and not os.environ.get(k):
+                    os.environ[k] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+
+
 def pb_api(method, path, body, api_key):
     """PhantomBuster v2 API wrapper (matches _shared/phantombuster.md core helper)."""
     url = f"https://api.phantombuster.com/api/v2/{path}"
@@ -254,6 +281,12 @@ def fetch_email_results(container_id, agent_id, api_key):
 # ── Main ────────────────────────────────────────────────────────────────────
 
 def main():
+    # Self-load config from the GTM .env so the caller doesn't need the fragile
+    # `export $(grep|xargs)` (which breaks on space-containing paths). Already-set
+    # env vars and CLI flags still win.
+    load_env_file({"PHANTOMBUSTER_API_KEY", "PB_AGENT_EMAIL", "PB_EMAIL_STAGING_SHEET_ID",
+                   "GOOGLE_CLIENT_SECRET_FILE", "GOOGLE_AUTHORIZED_USER_FILE"})
+
     ap = argparse.ArgumentParser(description="Priority-1 email enrichment via PhantomBuster Email Finder")
     ap.add_argument("--input", required=True, help="Input contacts CSV")
     ap.add_argument("--output", required=True, help="Output CSV (original columns + email fields)")
