@@ -280,7 +280,7 @@ result to `csv/output/`.
 
 **Step 7b — Deliverables** (build from the sanitized `csv/output/` only):
 1. **CSV** at `csv/output/contacts_enriched.csv`: lead data + generated messages (post-sanitize).
-2. **Card deck** (HTML): the parameterized keinsaas-style deck — one card per contact with
+2. **Card deck** (HTML): the parameterized deck template — one card per contact with
    signal (source + date), decision-maker, and ready message. **Start from the canonical
    template `deck_template.html`** (in this skill's directory) and fill every `{{TOKEN}}`; do
    not hand-copy a prior client's deck or restyle from scratch. Drive it from the sanitized CSV +
@@ -295,9 +295,10 @@ result to `csv/output/`.
      "on request" when no email — in that case **drop the email draft, keep only the LinkedIn
      draft**), and the message draft (email subject + body, then LinkedIn) with an A/B `cta-chip`.
    - **List bar** carries a **Download-CSV button** (`.dl`) beside the Expand-all toggle; the
-     footer carries a **big CTA button** (`.cta-btn`) linking to the client's booking URL
-     (`{{CALENDAR_URL}}` — ask for it, or leave the token if unknown). These two elements are the
-     grafted-in pieces; the rest is the nextbike combined-deck look.
+     footer carries a **big CTA button** (`.cta-btn`) linking to the sending brand's booking URL
+     (`{{CALENDAR_URL}}` — ask for it, or leave the token if unknown).
+   - **Brand tokens** (`{{BRAND_NAME}}`, `{{BRAND_TAGLINE}}`): the template ships white-label with
+     no vendor identity baked in — fill these with the sending brand's name and tagline.
    - **`{{CSV_DATA}}`**: embed the sanitized `csv/output/` rows as an escaped JS string (`\r\n`
      line endings; quote any field containing a comma) so the Download button emits a real CSV
      offline — no server. Set `{{CSV_FILENAME}}` to `{client-slug}_prospects.csv`.

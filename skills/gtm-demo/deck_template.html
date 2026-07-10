@@ -1,19 +1,21 @@
 <!DOCTYPE html><html lang="{{LANG}}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!--
-  keinsaas Lead-Engine demo deck — CANONICAL TEMPLATE (gtm-demo Step 7b).
-  Look: nextbike "combined deck" (signal-first + ICP-first segments, approach blocks,
-  hot/fit signals with source links, deliverability badges, A/B-CTA chips, expand-all).
-  Plus the two grafted-in elements: a Download-CSV button (.dl, in the list bar) and a
-  big footer call-to-action button (.cta-btn -> booking link).
+  Lead-demo deck. CANONICAL TEMPLATE (gtm-demo Step 7b).
+  Layout: signal-first + ICP-first segments with approach blocks, hot/fit signals
+  with source links, deliverability badges, A/B-CTA chips, expand-all. Plus two
+  interactive elements: a Download-CSV button (.dl, in the list bar) and a big
+  footer call-to-action button (.cta-btn -> booking link).
 
-  Fill every {{TOKEN}}. Drive it from the SANITIZED csv/output/ + context/ files.
-  Do NOT hand-copy a prior client's copy — regenerate hooks/messages per contact.
+  Fill every {{TOKEN}}, including the brand tokens ({{BRAND_NAME}}, {{BRAND_TAGLINE}})
+  and {{CALENDAR_URL}}. The template ships white-label, with no vendor identity baked in.
+  Drive it from the SANITIZED csv/output/ + context/ files.
+  Do NOT hand-copy a prior client's copy; regenerate hooks/messages per contact.
   Clone the two sample cards below (signal-first HOT, ICP-first FIT) once per contact.
   Delete the sig-hot block entirely for ICP-only contacts; keep a card's chevron + drafts.
   Keep it self-contained: no external JS, one <style>, fonts via Google Fonts CDN.
   Language: DE or EN. In German, no em-dashes; start sentences with a pronoun.
 -->
-<title>Lead-Demo · {{CLIENT_NAME}} | keinsaas</title>
+<title>Lead-Demo · {{CLIENT_NAME}} | {{BRAND_NAME}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -97,9 +99,9 @@ footer p{color:rgba(255,255,255,.7);margin-top:12px;max-width:70ch}
 @media(max-width:720px){.hero h1{font-size:31px}.stats{gap:24px}}
 @media print{body{background:#fff}.lead{break-inside:avoid;box-shadow:none}header,.hero,footer{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body>
-<header><div class="wrap"><div class="logo">keinsaas</div><div class="htag">Lead Engine · {{CLIENT_NAME}}</div></div></header>
+<header><div class="wrap"><div class="logo">{{BRAND_NAME}}</div><div class="htag">{{BRAND_TAGLINE}} · {{CLIENT_NAME}}</div></div></header>
 <section class="hero"><div class="wrap">
-  <div class="eyebrow">Demo · {{CLIENT_NAME}} × keinsaas</div>
+  <div class="eyebrow">Demo · {{CLIENT_NAME}} × {{BRAND_NAME}}</div>
   <h1>{{HERO_HEADLINE}}</h1>
   <p>{{HERO_INTRO}}</p>
   <div class="stats">
@@ -110,7 +112,7 @@ footer p{color:rgba(255,255,255,.7);margin-top:12px;max-width:70ch}
   </div>
 </div></section>
 <main><div class="wrap">
-  <!-- List bar: Download CSV (grafted from emfas) + Expand-all (from nextbike). Labels are language-swappable. -->
+  <!-- List bar: Download CSV + Expand-all. Labels are language-swappable. -->
   <div class="listbar"><button class="dl" id="dl">&#8595; {{LBL_DOWNLOAD}}</button><button class="toggle-all" id="toggle">{{LBL_EXPAND}}</button></div>
 
   <!-- ============================================================
@@ -143,7 +145,7 @@ footer p{color:rgba(255,255,255,.7);margin-top:12px;max-width:70ch}
 <footer><div class="wrap">
   <h2>{{FOOTER_HEADLINE}}</h2>
   <p>{{FOOTER_BODY}}</p>
-  <!-- Footer CTA button (grafted from emfas). href = the client's booking / demo link. -->
+  <!-- Footer CTA button. href = the sending brand's booking / demo link ({{CALENDAR_URL}}). -->
   <div><a class="cta-btn" href="{{CALENDAR_URL}}" target="_blank" rel="noopener">{{CTA_LABEL}} &#8594;</a></div>
   <div class="foot-meta">{{FOOTER_META}}</div>
 </div></footer>
