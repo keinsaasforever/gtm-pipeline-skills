@@ -133,6 +133,7 @@ These rules apply to every skill in the pipeline:
 10. **Global domains require location filter** — BetterContact with `.com` for global brands returns worldwide results. Always add `lead_location` filter. Local ccTLD domains (`.co.za`, `.de`) are safe without it.
 11. **Directory/scrape-sourced company lists: search by NAME, validate by domain-root** — never filter enrichment providers by exact domain (a directory `acme.de` won't match a provider-indexed `acme.com` → both BC and FE return 0). Search by company name + location, then confirm each candidate against the target by domain-root or name token (`fe_company_name` cross-check) to guard generic names. See People-Source Cadence.
 12. **Delivery is gated** — writing a message/email to a file is fine; **sending on the user's behalf needs explicit go-ahead** every time.
+13. **Ask when critical information is missing** — before executing a skill, if any input essential to a correct result is missing or ambiguous (ICP / target audience, offering & value prop, provider choice or credit budget, tone/language, an ID or path the run needs), **ask the user rather than assuming**. Do not guess a critical parameter to keep moving. This applies to every skill, including the executor skills (people-search, people-enrichment, company-enrichment) when they're invoked standalone rather than after an orchestrator (demo / pipeline) that already did discovery. Cheap, low-stakes defaults (poll interval, batch size within limits) need no prompt — reserve the ask for choices that change the output or spend credits.
 
 ---
 
@@ -366,6 +367,7 @@ Several providers have similarly-named products. Be explicit about which is mean
 
 | Product | Skill | Purpose | Notes |
 |---------|-------|---------|-------|
+| **PhantomBuster Email Finder** | people-enrichment | **Priority-1 email enrichment** | PB's built-in email waterfall (BetterContact et al.) via the "Email Finder" phantom. Input staged from a Google Sheet by `_shared/pb_email_finder.py`. **Runs first; if N/A (no PB key / staging sheet / Google OAuth → exit 3), skip to FullEnrich.** |
 | **BetterContact Lead Finder** | people-search | Synchronous people discovery API | Returns contacts by company + role filters |
 | **BetterContact async enrichment** | people-enrichment | Async email/phone enrichment | Slow due to multi-provider waterfall. Email hit rate is low (~14% in our tests) — **prefer FullEnrich for email**. Acceptable for phone if user has patience. |
 | **FullEnrich Finder** | people-search | People discovery (returns LinkedIn URLs) | Required upstream of FullEnrich Enrich for email |
