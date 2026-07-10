@@ -28,6 +28,7 @@ or run `/gtm-pipeline:setup` and it will look them up via the PB MCP automatical
 | PB_AGENT_SN_ACCOUNT | | Sales Navigator Account Scraper |
 | PB_AGENT_EMPLOYEES | | LinkedIn Company Employee Finder |
 | PB_AGENT_SN_SEARCH | | Sales Navigator Search Export |
+| PB_AGENT_EMAIL | | Email Finder (Priority 1 email enrichment) |
 | PB_AGENT_PROFILE | | LinkedIn Profile Scraper |
 | PB_AGENT_JOB_SEARCH | | LinkedIn Search Export (jobs mode) |
 | PB_AGENT_LIKER | | LinkedIn Auto Liker |
@@ -37,6 +38,23 @@ or run `/gtm-pipeline:setup` and it will look them up via the PB MCP automatical
 | PB_AGENT_CONNECTIONS | | LinkedIn Connections Export |
 
 You don't need all of these. Fill in only the ones you plan to use.
+
+---
+
+## PhantomBuster Email Finder staging (optional)
+
+The Email Finder phantom (`PB_AGENT_EMAIL`) reads its input from a Google Sheet.
+`_shared/pb_email_finder.py` stages contacts into a `pb_email_staging` tab in a
+sheet you own. Point it at that sheet, and give it Google OAuth. Add to your `.env`:
+
+```
+PB_EMAIL_STAGING_SHEET_ID=<the spreadsheet ID to stage into>
+GOOGLE_CLIENT_SECRET_FILE=/path/to/google_client_secret.json
+GOOGLE_AUTHORIZED_USER_FILE=/path/to/authorized_user.json   # optional; created on first OAuth
+```
+
+If any of these (or `PHANTOMBUSTER_API_KEY`) is absent, the email finder exits 3 and
+the waterfall simply starts at FullEnrich instead — PB is never required.
 
 ---
 

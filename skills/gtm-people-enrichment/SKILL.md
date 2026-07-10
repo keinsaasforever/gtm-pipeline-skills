@@ -42,11 +42,12 @@ When invoked from the demo flow: **email only, skip all phone providers entirely
 
 | Priority | Provider | Hit Rate | Cost | Speed | Notes |
 |----------|----------|----------|------|-------|-------|
-| 1st | **FullEnrich v2** | 80% (SA), 83% (DACH) | 0.8 cr/contact | instant | Clear winner |
-| 2nd | **Pipe0 waterfall** | 60% (SA), 83% (DACH) | 1.0–3.5 cr/contact | ~3 min/20 contacts | Solid backup |
-| 3rd | **BetterContact** (email-only) | ~60% test / **14% production SA** | 0.35 cr/contact | 30–90 min | Not recommended — slow, unreliable production |
+| **1st** | **PhantomBuster Email Finder** | account-dependent | ~1 cr/email found | ~3–6 min/batch (async container) | **Run first if available.** PB's built-in email waterfall (BetterContact et al.). Needs a Google Sheet to stage input + `PHANTOMBUSTER_API_KEY`. **If N/A, skip — fall through to FullEnrich.** See Provider 0. |
+| 2nd | **FullEnrich v2** | 80% (SA), 83% (DACH) | 0.8 cr/contact | instant | Strong direct-API fallback; email-first among the JSON providers |
+| 3rd | **Pipe0 waterfall** | 60% (SA), 83% (DACH) | 1.0–3.5 cr/contact | ~3 min/20 contacts | Solid backup |
+| 4th | **BetterContact** (email-only) | ~60% test / **14% production SA** | 0.35 cr/contact | 30–90 min | Not recommended — slow, unreliable production |
 
-**Recommended flow (email waterfall):** FE Enrich (v2) → BC → Pipe0 pipes → Amplemarket/Crustdata (last resort). FE is **email-first** because BC async email hit rate is low (~14% production SA). **Max 2 attempts per source**, then fall through. Mirrors conventions **People-Source Cadence**.
+**Recommended flow (email waterfall):** **PB Email Finder (Provider 0, if available) → FE Enrich (v2) → BC → Pipe0 pipes → Amplemarket/Crustdata (last resort).** PB runs first because it wraps a multi-provider waterfall in one call; when PB is **N/A** (no `PHANTOMBUSTER_API_KEY`, no staging sheet, or no Google OAuth — the engine exits 3) simply **skip it** and start at FE. FE is **email-first** among the direct-API providers because BC async email hit rate is low (~14% production SA). **Max 2 attempts per source**, then fall through. Mirrors conventions **People-Source Cadence**. Every provider's output — PB included — must pass the **Domain-Identity Cross-Check** below before it ships.
 
 ### Domain-Identity Cross-Check (critical)
 
@@ -121,6 +122,47 @@ clean, report = sanitize_rows(rows, email_policy="standard")  # "strict" also dr
 ```
 - **Deliverability policy** is applied by `sanitize.py` via `email_policy`: default `standard` keeps DELIVERABLE + HIGH_PROBABILITY + CATCH_ALL and drops UNKNOWN/RISKY/invalid; `strict` additionally drops catch-all
 - Write the sanitized rows to `csv/output/contacts_enriched.csv`
+
+---
+
+## Provider 0: PhantomBuster Email Finder (Email — Priority 1)
+
+The **first** email provider in the waterfall when it's available. Uses the PhantomBuster "Email Finder" phantom (`emailChooser: "phantombuster"`), which resolves a professional email from **first name + last name + company domain** via PB's own multi-provider email waterfall (BetterContact et al.). It is a **data** phantom — **no LinkedIn session cookie needed** (unlike Connect/Message agents).
+
+**Key difference from the other providers:** input is read from a **Google Sheet tab**, not a JSON POST body. The engine handles the staging/launch/poll/fetch for you.
+
+### Prerequisites (all three, else it's N/A → skip)
+- `PHANTOMBUSTER_API_KEY` in the env
+- A **Google Sheet you own** to stage input rows into (pass its ID via `--staging-spreadsheet-id` or `PB_EMAIL_STAGING_SHEET_ID`)
+- Google OAuth available to `gspread` (`GOOGLE_CLIENT_SECRET_FILE`, optional `GOOGLE_AUTHORIZED_USER_FILE`)
+- Agent ID resolved via `PB_AGENT_EMAIL` (env / `_shared/local.md`), or by phantom name "Email Finder" through the PB API/MCP. See `_shared/phantombuster.md`.
+
+**If any prerequisite is missing the engine exits `3` — a clean "not available" signal. Treat exit 3 as "skip PB, start the waterfall at FullEnrich."** Do not treat it as an error.
+
+### Run
+```bash
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+export $(grep -E '^(PHANTOMBUSTER_API_KEY|GOOGLE_CLIENT_SECRET_FILE|GOOGLE_AUTHORIZED_USER_FILE|PB_AGENT_EMAIL|PB_EMAIL_STAGING_SHEET_ID)=' "$GTM_ENV_PATH" | xargs) && \
+python3 ~/.claude/skills/gtm-pipeline/_shared/pb_email_finder.py \
+  --input  csv/intermediate/contacts_filtered.csv \
+  --output csv/intermediate/contacts_pb_email.csv \
+  --staging-spreadsheet-id "$PB_EMAIL_STAGING_SHEET_ID"
+rc=$?   # rc==3 → PB N/A, skip to FullEnrich on the SAME input CSV
+```
+
+Then run the FullEnrich pass (Provider 1) on the rows that still have **no email** — the engine leaves those blank and preserves every original column, so `contacts_pb_email.csv` becomes the input to FE.
+
+### Behaviour
+- Column names default to the GTM people schema (`first_name`, `last_name`, `company_name`, `company_domain`, `email`, `email_status`, `email_source`) — all overridable via flags.
+- Only rows with **first + last + domain** are sent to PB; the rest fall through untouched.
+- Batches of 50. Per batch: stage → launch → wait 180s → poll (10s, 600s cap) → fetch `resultObject` (console-log regex fallback).
+- **Domain-identity cross-check is applied automatically.** An email whose domain doesn't belong to the target company is **dropped** (left blank → falls through to FE), honouring the MANDATORY cross-check below. Use `--keep-mismatch` only if you deliberately want to keep them.
+- Sets `email_source = "phantombuster"` and `email_status` = `match` / `subdomain` on kept emails. `~1 credit per email found`.
+
+### Notes
+- Agent ID is account-specific; the engine's built-in default is the keinsaas account's — **resolve your own** via `PB_AGENT_EMAIL`.
+- Because PB is async (~3–6 min/batch), on a large batch it is slower wall-clock than FE but wraps several providers in one call. For a ~10-contact demo it's one batch.
+- The staging tab (`pb_email_staging`) is created/overwritten in your sheet on each run — it's internal scratch, not lead-facing.
 
 ---
 
