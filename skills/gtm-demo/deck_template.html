@@ -1,0 +1,170 @@
+<!DOCTYPE html><html lang="{{LANG}}"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  keinsaas Lead-Engine demo deck — CANONICAL TEMPLATE (gtm-demo Step 7b).
+  Look: nextbike "combined deck" (signal-first + ICP-first segments, approach blocks,
+  hot/fit signals with source links, deliverability badges, A/B-CTA chips, expand-all).
+  Plus the two grafted-in elements: a Download-CSV button (.dl, in the list bar) and a
+  big footer call-to-action button (.cta-btn -> booking link).
+
+  Fill every {{TOKEN}}. Drive it from the SANITIZED csv/output/ + context/ files.
+  Do NOT hand-copy a prior client's copy — regenerate hooks/messages per contact.
+  Clone the two sample cards below (signal-first HOT, ICP-first FIT) once per contact.
+  Delete the sig-hot block entirely for ICP-only contacts; keep a card's chevron + drafts.
+  Keep it self-contained: no external JS, one <style>, fonts via Google Fonts CDN.
+  Language: DE or EN. In German, no em-dashes; start sentences with a pronoun.
+-->
+<title>Lead-Demo · {{CLIENT_NAME}} | keinsaas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--blue:#0d00e0;--nb:#e2001a;--black:#0a0a0a;--white:#fff;--grey:#f5f5f5;--border:#e6e6e6;--muted:#666;--hot:#e2001a;--fit:#0d00e0;--fh:'Instrument Serif',Georgia,serif;--fb:'Manrope',-apple-system,sans-serif}
+body{font-family:var(--fb);color:var(--black);background:#fafafa;line-height:1.55}
+.wrap{max-width:1040px;margin:0 auto;padding:0 28px}
+header{background:var(--black);color:var(--white);padding:14px 0}
+header .wrap{display:flex;justify-content:space-between;align-items:center}
+.logo{font-family:var(--fh);font-size:20px;color:var(--blue);font-weight:700}
+.htag{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.hero{background:var(--black);color:var(--white);padding:44px 0 52px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:18px}
+.hero h1{font-family:var(--fh);font-weight:400;font-size:44px;line-height:1.06;letter-spacing:-.015em;max-width:26ch}
+.hero p{color:rgba(255,255,255,.72);font-size:17px;max-width:74ch;margin-top:18px}
+.stats{display:flex;gap:42px;margin-top:34px;flex-wrap:wrap}
+.stats .s .n{font-family:var(--fh);font-size:36px;color:var(--white);line-height:1}
+.stats .s .n .accent{color:var(--blue)}
+.stats .s .l{font-size:13px;color:rgba(255,255,255,.55);margin-top:6px}
+main{padding:36px 0 16px}
+.seg{margin:20px 0 8px}
+.seg-head{border-top:2px solid var(--black);padding-top:18px;margin:38px 0 8px}
+.seg-kicker{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--nb)}
+.seg-head h2{font-family:var(--fh);font-weight:400;font-size:32px;letter-spacing:-.01em;margin-top:4px}
+.seg-head p{font-size:14.5px;color:var(--muted);margin-top:8px;max-width:82ch}
+.seg-meta{font-size:12.5px;font-weight:600;color:#111;margin-top:10px}
+.approach{border-left:3px solid var(--border);padding:2px 0 2px 16px;margin:26px 0 14px}
+.approach.sig{border-left-color:var(--hot)}
+.approach.icp{border-left-color:var(--fit)}
+.approach h3{font-family:var(--fh);font-weight:400;font-size:23px;letter-spacing:-.01em}
+.approach p{font-size:13.5px;color:var(--muted);margin-top:5px;max-width:80ch}
+.lead{background:var(--white);border:1px solid var(--border);border-radius:14px;padding:18px 24px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.lead[open]{padding-bottom:22px}
+.lead-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;cursor:pointer;list-style:none;outline:none}
+.lead-top::-webkit-details-marker{display:none}
+.chev{color:var(--muted);font-size:15px;transition:transform .18s ease;flex:0 0 auto;margin-left:2px}
+.lead[open] .chev{transform:rotate(180deg)}
+.lead-body{padding-top:4px}
+.fav{width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:#fff;flex:0 0 auto}
+.lead-id{flex:1;min-width:200px}
+.lead-name{font-weight:700;font-size:18px;letter-spacing:-.01em}
+.lead-domain{color:var(--blue);font-size:13px;text-decoration:none}
+.lead-tags{display:flex;gap:7px;flex-wrap:wrap}
+.tag{font-size:11.5px;font-weight:600;background:var(--grey);color:#444;border-radius:20px;padding:4px 11px}
+.tag-sig{background:var(--hot);color:#fff}
+.tag-icp{background:var(--blue);color:#fff}
+.tag-lang{background:#111;color:#fff}
+.signal{margin:16px 0;border-radius:10px;padding:12px 15px;border-left:3px solid var(--muted);background:var(--grey)}
+.signal.sig-hot{border-left-color:var(--hot);background:#fff2f3}
+.signal.sig-fit{border-left-color:var(--fit);background:#f4f3ff}
+.siglabel{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#333;margin-bottom:5px}
+.sig-hot .siglabel{color:var(--hot)}
+.sig-fit .siglabel{color:var(--fit)}
+.sigtext{font-size:14px;color:#222}
+.sigsrc{display:inline-block;margin-top:8px;font-size:12px;font-weight:600;color:var(--blue);text-decoration:none}
+.sigsrc:hover{text-decoration:underline}
+.contact{margin-top:14px;background:var(--grey);border-radius:10px;padding:13px 16px}
+.clabel{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--blue);margin-bottom:5px}
+.cname{font-size:14.5px}.cname .ctitle{color:var(--muted)}
+.clinks{font-size:13px;margin-top:4px}.clinks a{color:var(--blue);text-decoration:none}.cmail{color:#333}
+.est{font-size:10.5px;font-weight:700;border-radius:20px;padding:2px 8px;margin-left:4px}
+.est-ok{background:#e6f7ee;color:#0a7a45}.est-warn{background:#fff4e0;color:#a86400}
+.msg{margin-top:14px;border:1px dashed var(--border);border-radius:10px;padding:13px 16px;background:#fff}
+.msglabel{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:9px}
+.cta-chip{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:none;color:var(--blue);background:#f4f3ff;border:1px solid #ddd8ff;border-radius:20px;padding:2px 9px;margin-left:6px;vertical-align:middle}
+.msg-sub{font-size:12px;font-weight:600;color:#111;margin-bottom:4px}
+.msg-sub.li{margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}
+.msg-sub .ml{color:var(--blue);text-transform:uppercase;letter-spacing:.06em;font-size:10.5px}
+.msg-body .mp{font-size:13.5px;color:#333;line-height:1.6;margin:0 0 8px}
+.msg-body .mp:last-child{margin-bottom:0}
+.note{font-size:12.5px;color:var(--muted);margin:16px 0 30px;line-height:1.6}
+.listbar{display:flex;justify-content:flex-end;gap:10px;margin:8px 0 14px}
+.toggle-all,.dl{font-family:var(--fb);font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--blue);background:#fff;border:1px solid var(--border);border-radius:20px;padding:7px 15px;cursor:pointer}
+.toggle-all:hover,.dl:hover{border-color:var(--blue)}
+footer{background:var(--black);color:var(--white);padding:46px 0;margin-top:24px}
+footer h2{font-family:var(--fh);font-weight:400;font-size:34px}
+footer p{color:rgba(255,255,255,.7);margin-top:12px;max-width:70ch}
+.cta-btn{display:inline-block;margin-top:26px;background:var(--blue);color:#fff;font-family:var(--fb);font-weight:800;font-size:16px;letter-spacing:-.01em;text-decoration:none;padding:15px 30px;border-radius:12px;transition:opacity .15s ease}
+.cta-btn:hover{opacity:.9}
+.foot-meta{font-size:12px;color:rgba(255,255,255,.4);margin-top:30px}
+@media(max-width:720px){.hero h1{font-size:31px}.stats{gap:24px}}
+@media print{body{background:#fff}.lead{break-inside:avoid;box-shadow:none}header,.hero,footer{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body>
+<header><div class="wrap"><div class="logo">keinsaas</div><div class="htag">Lead Engine · {{CLIENT_NAME}}</div></div></header>
+<section class="hero"><div class="wrap">
+  <div class="eyebrow">Demo · {{CLIENT_NAME}} × keinsaas</div>
+  <h1>{{HERO_HEADLINE}}</h1>
+  <p>{{HERO_INTRO}}</p>
+  <div class="stats">
+    <div class="s"><div class="n"><span class="accent">{{STAT1_N}}</span></div><div class="l">{{STAT1_LABEL}}</div></div>
+    <div class="s"><div class="n">{{STAT2_N}}</div><div class="l">{{STAT2_LABEL}}</div></div>
+    <div class="s"><div class="n">{{STAT3_N}}</div><div class="l">{{STAT3_LABEL}}</div></div>
+    <div class="s"><div class="n">{{STAT4_N}}</div><div class="l">{{STAT4_LABEL}}</div></div>
+  </div>
+</div></section>
+<main><div class="wrap">
+  <!-- List bar: Download CSV (grafted from emfas) + Expand-all (from nextbike). Labels are language-swappable. -->
+  <div class="listbar"><button class="dl" id="dl">&#8595; {{LBL_DOWNLOAD}}</button><button class="toggle-all" id="toggle">{{LBL_EXPAND}}</button></div>
+
+  <!-- ============================================================
+       SEGMENT (repeat per segment; drop the whole block if only one).
+       seg-meta summarises counts. Inside a segment, use approach
+       blocks to frame Signal-first vs ICP-first groups of cards.
+       ============================================================ -->
+  <section class="seg"><div class="seg-head"><div class="seg-kicker">{{SEG_KICKER}}</div><h2>{{SEG_TITLE}}</h2><p>{{SEG_INTRO}}</p><div class="seg-meta">{{SEG_META}}</div></div>
+
+  <!-- Approach framing (optional; use when a segment mixes both angles) -->
+  <div class="approach sig"><h3>{{APPROACH_SIG_TITLE}}</h3><p>{{APPROACH_SIG_DESC}}</p></div>
+
+  <!-- ---- SAMPLE CARD A: SIGNAL-FIRST (fresh, sourced buying signal <=60d) ---- -->
+  <details class="lead"><summary class="lead-top"><img class="fav" src="https://www.google.com/s2/favicons?domain={{COMPANY_DOMAIN}}&sz=64" alt="" loading="lazy" onerror="this.style.display='none'"><div class="lead-id"><div class="lead-name">{{COMPANY_NAME}}</div><a class="lead-domain" href="https://{{COMPANY_DOMAIN}}" target="_blank" rel="noopener">{{COMPANY_DOMAIN}}</a></div><div class="lead-tags"><span class="tag tag-sig">{{TAG_SIGNAL_FIRST}}</span><span class="tag">{{TAG_ATTR_1}}</span><span class="tag">{{TAG_ATTR_2}}</span><span class="tag tag-lang">{{TAG_LANG}}</span></div><span class="chev" aria-hidden="true">&#9662;</span></summary><div class="lead-body"><div class="signal sig-hot"><div class="siglabel">{{SIGNAL_LABEL}}</div><div class="sigtext">{{SIGNAL_TEXT}}</div><a class="sigsrc" href="{{SIGNAL_SOURCE_URL}}" target="_blank" rel="noopener">&#8599; {{SIGNAL_SOURCE_LABEL}} · {{SIGNAL_DATE}}</a></div><div class="contact"><div class="clabel">{{CONTACT_LABEL}}</div><div class="cname"><strong>{{CONTACT_NAME}}</strong><span class="ctitle"> · {{CONTACT_TITLE}}</span></div><div class="clinks"><a href="{{CONTACT_LINKEDIN}}" target="_blank" rel="noopener">LinkedIn</a> · <span class="cmail">{{CONTACT_EMAIL}}</span> <span class="est est-ok">{{EMAIL_BADGE}}</span></div></div><div class="msg"><div class="msglabel">{{MSG_DRAFT_LABEL}} <span class="cta-chip">{{CTA_VARIANT}}</span></div><div class="msg-sub"><span class="ml">{{EMAIL_SUBJECT_LABEL}}</span> {{EMAIL_SUBJECT}}</div><div class="msg-body"><p class="mp">{{EMAIL_P1}}</p><p class="mp">{{EMAIL_P2}}</p><p class="mp">{{EMAIL_P3}}</p></div><div class="msg-sub li"><span class="ml">LinkedIn</span></div><div class="msg-body"><p class="mp">{{LI_P1}}</p><p class="mp">{{LI_P2}}</p></div></div></div></details>
+  <!-- ---- /SAMPLE CARD A ---- -->
+
+  <div class="approach icp"><h3>{{APPROACH_ICP_TITLE}}</h3><p>{{APPROACH_ICP_DESC}}</p></div>
+
+  <!-- ---- SAMPLE CARD B: ICP-FIRST (strong fit, no live signal). Note: no sig-hot block;
+            use sig-fit and a "why they fit" line. Omit the email/est if no verified email
+            (use <span class="est est-warn">on request</span> and drop the email draft). ---- -->
+  <details class="lead"><summary class="lead-top"><img class="fav" src="https://www.google.com/s2/favicons?domain={{COMPANY2_DOMAIN}}&sz=64" alt="" loading="lazy" onerror="this.style.display='none'"><div class="lead-id"><div class="lead-name">{{COMPANY2_NAME}}</div><a class="lead-domain" href="https://{{COMPANY2_DOMAIN}}" target="_blank" rel="noopener">{{COMPANY2_DOMAIN}}</a></div><div class="lead-tags"><span class="tag tag-icp">{{TAG_ICP_FIRST}}</span><span class="tag">{{TAG2_ATTR_1}}</span><span class="tag">{{TAG2_ATTR_2}}</span><span class="tag tag-lang">{{TAG2_LANG}}</span></div><span class="chev" aria-hidden="true">&#9662;</span></summary><div class="lead-body"><div class="signal sig-fit"><div class="siglabel">{{FIT_LABEL}}</div><div class="sigtext">{{FIT_TEXT}}</div></div><div class="contact"><div class="clabel">{{CONTACT2_LABEL}}</div><div class="cname"><strong>{{CONTACT2_NAME}}</strong><span class="ctitle"> · {{CONTACT2_TITLE}}</span></div><div class="clinks"><a href="{{CONTACT2_LINKEDIN}}" target="_blank" rel="noopener">LinkedIn</a> · <span class="est est-warn">{{EMAIL2_BADGE}}</span></div></div><div class="msg"><div class="msglabel">{{MSG_DRAFT_LABEL}} <span class="cta-chip">{{CTA_VARIANT}}</span></div><div class="msg-sub li"><span class="ml">LinkedIn</span></div><div class="msg-body"><p class="mp">{{LI2_P1}}</p><p class="mp">{{LI2_P2}}</p></div></div></div></details>
+  <!-- ---- /SAMPLE CARD B ---- -->
+
+  </section>
+  <!-- ============================================================ /SEGMENT -->
+
+  <p class="note">{{METHOD_NOTE}}</p>
+</div></main>
+<footer><div class="wrap">
+  <h2>{{FOOTER_HEADLINE}}</h2>
+  <p>{{FOOTER_BODY}}</p>
+  <!-- Footer CTA button (grafted from emfas). href = the client's booking / demo link. -->
+  <div><a class="cta-btn" href="{{CALENDAR_URL}}" target="_blank" rel="noopener">{{CTA_LABEL}} &#8594;</a></div>
+  <div class="foot-meta">{{FOOTER_META}}</div>
+</div></footer>
+<script>
+// Keep summary links from toggling the card open.
+document.querySelectorAll('summary a').forEach(function(a){ a.addEventListener('click', function(ev){ ev.stopPropagation(); }); });
+
+// Download CSV — CSV_DATA is the sanitized csv/output rows as an escaped JS string
+// (\r\n line endings, quote fields containing commas). Regenerate per run.
+const CSV = "{{CSV_DATA}}";
+document.getElementById('dl').addEventListener('click', function(){
+  var b = new Blob([CSV], {type:'text/csv;charset=utf-8;'}), u = URL.createObjectURL(b), a = document.createElement('a');
+  a.href = u; a.download = '{{CSV_FILENAME}}'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(u);
+});
+
+// Expand / collapse all cards.
+var open = false;
+document.getElementById('toggle').addEventListener('click', function(){
+  open = !open;
+  document.querySelectorAll('details.lead').forEach(function(d){ d.open = open; });
+  this.textContent = open ? '{{LBL_COLLAPSE}}' : '{{LBL_EXPAND}}';
+});
+</script>
+</body></html>

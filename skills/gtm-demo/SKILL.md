@@ -284,13 +284,37 @@ result to `csv/output/`.
 **Step 7b — Deliverables** (build from the sanitized `csv/output/` only):
 1. **CSV** at `csv/output/contacts_enriched.csv`: lead data + generated messages (post-sanitize).
 2. **Card deck** (HTML): the parameterized keinsaas-style deck — one card per contact with
-   signal (source + date), decision-maker, and ready message. Drive it from the sanitized CSV +
-   `context/` files; do not hand-copy a prior client's deck. Assemble with the **sonnet** model.
+   signal (source + date), decision-maker, and ready message. **Start from the canonical
+   template `deck_template.html`** (in this skill's directory) and fill every `{{TOKEN}}`; do
+   not hand-copy a prior client's deck or restyle from scratch. Drive it from the sanitized CSV +
+   `context/` files. Assemble with the **sonnet** model. Deck anatomy (all baked into the template):
+   - **Header + hero + 4 stat tiles**, then segment blocks. Group contacts into **Signal-first**
+     (fresh, sourced buying signal ≤ 60d → `sig-hot` red signal box with a live `.sigsrc` source
+     link + date) and **ICP-first** (strong fit, no live signal → `sig-fit` blue "why they fit"
+     box, no source link). Use `.approach` blocks to frame each group; `.seg-meta` for counts.
+   - Each card = collapsible `<details class="lead">`: favicon, company + domain, attribute tags
+     (`tag-sig`/`tag-icp` + language `tag-lang`), the signal/fit box, the decision-maker with
+     LinkedIn + email and a deliverability badge (`est-ok` = verified email, `est-warn`
+     "on request" when no email — in that case **drop the email draft, keep only the LinkedIn
+     draft**), and the message draft (email subject + body, then LinkedIn) with an A/B `cta-chip`.
+   - **List bar** carries a **Download-CSV button** (`.dl`) beside the Expand-all toggle; the
+     footer carries a **big CTA button** (`.cta-btn`) linking to the client's booking URL
+     (`{{CALENDAR_URL}}` — ask for it, or leave the token if unknown). These two elements are the
+     grafted-in pieces; the rest is the nextbike combined-deck look.
+   - **`{{CSV_DATA}}`**: embed the sanitized `csv/output/` rows as an escaped JS string (`\r\n`
+     line endings; quote any field containing a comma) so the Download button emits a real CSV
+     offline — no server. Set `{{CSV_FILENAME}}` to `{client-slug}_prospects.csv`.
+   - Language DE or EN (`{{LANG}}` + swap the `{{LBL_*}}` button labels). In German: no em-dashes,
+     start sentences with a pronoun. Keep it self-contained (one `<style>`, inline `<script>`).
 3. **Google Sheet** (optional): formatted for review.
 
 **Step 7c — Programmatic self-QA** (browser QA is often unavailable — never depend on a screenshot):
-assert card count == contact count; every signal card has a live source link + date; **zero empty
-fields / placeholders**; zero em-dashes; one email + one LinkedIn draft per card within char caps.
+assert card count == contact count; **zero unfilled `{{TOKEN}}` placeholders remain** in the HTML;
+every signal card has a live source link + date; **zero empty fields / placeholders**; zero
+em-dashes; one email + one LinkedIn draft per verified-email card (LinkedIn-only for `est-warn`
+cards) within char caps. Also assert the deck's plumbing survived templating: the **Download-CSV
+button** (`id="dl"`) with a non-empty `CSV` string, the **footer CTA** (`.cta-btn`), and the
+Expand-all toggle (`id="toggle"`) are all present, and the embedded CSV row count == card count.
 
 ### Output CSV Columns (post-sanitize; empty/internal columns auto-dropped)
 
