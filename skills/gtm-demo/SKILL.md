@@ -304,17 +304,31 @@ result to `csv/output/`.
    - **`{{CSV_DATA}}`**: embed the sanitized `csv/output/` rows as an escaped JS string (`\r\n`
      line endings; quote any field containing a comma) so the Download button emits a real CSV
      offline — no server. Set `{{CSV_FILENAME}}` to `{client-slug}_prospects.csv`.
-   - Language DE or EN (`{{LANG}}` + swap the `{{LBL_*}}` button labels). In German: no em-dashes,
-     start sentences with a pronoun. Keep it self-contained (one `<style>`, inline `<script>`).
+   - **Hero = hook, not manual.** `{{HERO_HEADLINE}}` short (≤ ~7 words), outcome-first, no jargon;
+     `{{HERO_INTRO}}` 1–2 short sentences on what they *get* (ready-to-send outreach to the right
+     people), never how the pipeline works. Intrigue, don't overwhelm with technical detail.
+   - **Never name a third-party tool or data provider** anywhere in the rendered deck (no enrichment
+     vendor, search/scrape provider, or phone/email finder). A signal's source link cites the
+     *original publication* (press release, careers page, news outlet), not the tool that found it.
+     The lead's own LinkedIn link is fine. Sanitize (7a) already strips provider labels — this keeps
+     hand-written hero/footer/method copy clean too.
+   - Language DE or EN (`{{LANG}}` + swap the `{{LBL_*}}` button labels). **German uses Du-form**
+     (informal *du/dein*, not *Sie*), no em-dashes, start sentences with a pronoun. Keep it
+     self-contained (one `<style>`, inline `<script>`).
 3. **Google Sheet** (optional): formatted for review.
 
 **Step 7c — Programmatic self-QA** (browser QA is often unavailable — never depend on a screenshot):
 assert card count == contact count; **zero unfilled `{{TOKEN}}` placeholders remain** in the HTML;
 every signal card has a live source link + date; **zero empty fields / placeholders**; zero
 em-dashes; one email + one LinkedIn draft per verified-email card (LinkedIn-only for `est-warn`
-cards) within char caps. Also assert the deck's plumbing survived templating: the **Download-CSV
-button** (`id="dl"`) with a non-empty `CSV` string, the **footer CTA** (`.cta-btn`), and the
-Expand-all toggle (`id="toggle"`) are all present, and the embedded CSV row count == card count.
+cards) within char caps. **No third-party tool / data-provider name** appears in the rendered text
+(grep the visible copy for enrichment/search/scrape vendor names — none allowed; the lead's own
+LinkedIn link is the only exception). **German decks use Du-form** — flag any `Sie/Ihr/Ihnen`
+formal-address forms. **Hero is tight** — `{{HERO_HEADLINE}}` ≤ ~7 words and `{{HERO_INTRO}}` ≤ 2
+sentences with no pipeline/sourcing detail. Also assert the deck's plumbing survived templating: the
+**Download-CSV button** (`id="dl"`) with a non-empty `CSV` string, the **footer CTA** (`.cta-btn`),
+and the Expand-all toggle (`id="toggle"`) are all present, and the embedded CSV row count == card
+count.
 
 ### Output CSV Columns (post-sanitize; empty/internal columns auto-dropped)
 
