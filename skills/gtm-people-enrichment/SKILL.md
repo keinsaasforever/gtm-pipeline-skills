@@ -141,14 +141,16 @@ The **first** email provider in the waterfall when it's available. Uses the Phan
 
 ### Run
 ```bash
+# Just set GTM_ENV_PATH — the engine self-loads PHANTOMBUSTER_API_KEY, PB_AGENT_EMAIL,
+# PB_EMAIL_STAGING_SHEET_ID and the Google cred paths from that .env itself. (No
+# `export $(grep|xargs)`: the Google cred path contains spaces and would break xargs.)
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-export $(grep -E '^(PHANTOMBUSTER_API_KEY|GOOGLE_CLIENT_SECRET_FILE|GOOGLE_AUTHORIZED_USER_FILE|PB_AGENT_EMAIL|PB_EMAIL_STAGING_SHEET_ID)=' "$GTM_ENV_PATH" | xargs) && \
 python3 ~/.claude/skills/gtm-pipeline/_shared/pb_email_finder.py \
   --input  csv/intermediate/contacts_filtered.csv \
-  --output csv/intermediate/contacts_pb_email.csv \
-  --staging-spreadsheet-id "$PB_EMAIL_STAGING_SHEET_ID"
+  --output csv/intermediate/contacts_pb_email.csv
 rc=$?   # rc==3 → PB N/A, skip to FullEnrich on the SAME input CSV
 ```
+`--staging-spreadsheet-id` defaults to `PB_EMAIL_STAGING_SHEET_ID` from the env, so you usually don't pass it.
 
 Then run the FullEnrich pass (Provider 1) on the rows that still have **no email** — the engine leaves those blank and preserves every original column, so `contacts_pb_email.csv` becomes the input to FE.
 
