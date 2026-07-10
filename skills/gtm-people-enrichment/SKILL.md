@@ -129,32 +129,30 @@ clean, report = sanitize_rows(rows, email_policy="standard")  # "strict" also dr
 
 The **first** email provider in the waterfall when it's available. Uses the PhantomBuster "Email Finder" phantom (`emailChooser: "phantombuster"`), which resolves a professional email from **first name + last name + company domain** via PB's own multi-provider email waterfall (BetterContact et al.). It is a **data** phantom — **no LinkedIn session cookie needed** (unlike Connect/Message agents).
 
-**Key difference from the other providers:** input is read from a **Google Sheet tab**, not a JSON POST body. The engine handles the staging/launch/poll/fetch for you.
+**Key difference from the other providers:** input is read from a **Google Sheet**, not a JSON POST body. The engine **creates a fresh blank sheet for each run** (so rows from different projects/runs never mix), link-shares it read-only so PhantomBuster can read it, stages the contacts, runs the phantom, then **trashes the sheet** (recoverable) on success. You don't manage any sheet yourself.
 
 ### Prerequisites (all three, else it's N/A → skip)
 - `PHANTOMBUSTER_API_KEY` in the env
-- A **Google Sheet you own** to stage input rows into (pass its ID via `--staging-spreadsheet-id` or `PB_EMAIL_STAGING_SHEET_ID`)
-- Google OAuth available to `gspread` (`GOOGLE_CLIENT_SECRET_FILE`, optional `GOOGLE_AUTHORIZED_USER_FILE`)
+- Google OAuth available to `gspread` — `GOOGLE_CLIENT_SECRET_FILE` (+ optional `GOOGLE_AUTHORIZED_USER_FILE`). The engine creates/shares/trashes its own sheet, so **no pre-existing sheet ID is needed.**
 - Agent ID resolved via `PB_AGENT_EMAIL` (env / `_shared/local.md`), or by phantom name "Email Finder" through the PB API/MCP. See `_shared/phantombuster.md`.
 
 **If any prerequisite is missing the engine exits `3` — a clean "not available" signal. Treat exit 3 as "skip PB, start the waterfall at FullEnrich."** Do not treat it as an error.
 
 ### Run
 ```bash
-# Just set GTM_ENV_PATH — the engine self-loads PHANTOMBUSTER_API_KEY, PB_AGENT_EMAIL,
-# PB_EMAIL_STAGING_SHEET_ID and the Google cred paths from that .env itself. (No
-# `export $(grep|xargs)`: the Google cred path contains spaces and would break xargs.)
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+export $(grep -E '^(PHANTOMBUSTER_API_KEY|GOOGLE_CLIENT_SECRET_FILE|GOOGLE_AUTHORIZED_USER_FILE|PB_AGENT_EMAIL)=' "$GTM_ENV_PATH" | xargs) && \
 python3 ~/.claude/skills/gtm-pipeline/_shared/pb_email_finder.py \
   --input  csv/intermediate/contacts_filtered.csv \
-  --output csv/intermediate/contacts_pb_email.csv
+  --output csv/intermediate/contacts_pb_email.csv \
+  --client-slug {client-slug}     # names the fresh staging sheet for identifiability
 rc=$?   # rc==3 → PB N/A, skip to FullEnrich on the SAME input CSV
 ```
-`--staging-spreadsheet-id` defaults to `PB_EMAIL_STAGING_SHEET_ID` from the env, so you usually don't pass it.
 
 Then run the FullEnrich pass (Provider 1) on the rows that still have **no email** — the engine leaves those blank and preserves every original column, so `contacts_pb_email.csv` becomes the input to FE.
 
 ### Behaviour
+- **Fresh sheet per run.** A new blank spreadsheet `gtm-pb-email-staging {slug} {date}` is created, link-shared read-only (so PB can read it), used, then trashed on success (kept on failure or with `--keep-staging`; `--no-share` if your PB reads Drive via a Google connection instead).
 - Column names default to the GTM people schema (`first_name`, `last_name`, `company_name`, `company_domain`, `email`, `email_status`, `email_source`) — all overridable via flags.
 - Only rows with **first + last + domain** are sent to PB; the rest fall through untouched.
 - Batches of 50. Per batch: stage → launch → wait 180s → poll (10s, 600s cap) → fetch `resultObject` (console-log regex fallback).
@@ -164,7 +162,8 @@ Then run the FullEnrich pass (Provider 1) on the rows that still have **no email
 ### Notes
 - Agent ID is account-specific; the engine's built-in default is the keinsaas account's — **resolve your own** via `PB_AGENT_EMAIL`.
 - Because PB is async (~3–6 min/batch), on a large batch it is slower wall-clock than FE but wraps several providers in one call. For a ~10-contact demo it's one batch.
-- The staging tab (`pb_email_staging`) is created/overwritten in your sheet on each run — it's internal scratch, not lead-facing.
+- The fresh staging sheet briefly holds lead names + domains on an "anyone-with-link: reader" link while PB reads it; it's trashed right after. If that transient exposure isn't acceptable, connect your Google account inside PhantomBuster and pass `--no-share`.
+- Legacy: pass `--staging-spreadsheet-id <id>` to reuse one sheet's `pb_email_staging` tab instead of creating fresh (not recommended — risks cross-project row mixing).
 
 ---
 

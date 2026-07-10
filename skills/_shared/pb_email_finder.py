@@ -8,20 +8,25 @@ email waterfall (BetterContact et al.) under the hood. It is a *data* phantom �
 LinkedIn session cookie required.
 
 Unlike FullEnrich / BetterContact / Pipe0 (direct JSON POST), this phantom reads its
-input from a Google Sheet tab (`spreadsheetUrl`). This engine therefore:
-  1. stages the input contacts into a worksheet in a spreadsheet you already own,
-  2. launches the phantom pointed at that tab,
-  3. polls the container to completion,
-  4. fetches the result object, maps emails back by (first, last, domain),
-  5. writes email / email_status / email_source into an output CSV (all original
-     columns preserved).
+input from a Google Sheet (`spreadsheetUrl`). This engine therefore:
+  1. CREATES A FRESH blank spreadsheet for this run (so rows from different projects/
+     runs never mix) and link-shares it read-only so PhantomBuster can read it,
+  2. stages the input contacts into it,
+  3. launches the phantom pointed at that sheet,
+  4. polls the container to completion,
+  5. fetches the result object, maps emails back by (first, last, domain),
+  6. writes email / email_status / email_source into an output CSV (all original
+     columns preserved),
+  7. trashes the staging sheet (recoverable) on success — kept on failure or with
+     --keep-staging.
+(Legacy: pass --staging-spreadsheet-id to reuse one sheet's `pb_email_staging` tab.)
 
 SKIP-IF-N/A CONTRACT (exit code 3): this engine is Priority 1 in the email waterfall,
 but it is optional infrastructure. It exits 3 — a clean "not available, fall through to
 the next provider" — when ANY prerequisite is missing:
   - PHANTOMBUSTER_API_KEY not set
-  - gspread not importable / Google OAuth creds not found
-  - no --staging-spreadsheet-id given
+  - gspread not importable / Google OAuth creds not found (GOOGLE_CLIENT_SECRET_FILE)
+  - the fresh spreadsheet cannot be created
 The caller (people-enrichment / demo) treats exit 3 as "skip, run FullEnrich next".
 Exit 0 = ran (emails may or may not have been found). Exit 1 = hard error.
 
@@ -31,11 +36,11 @@ people-enrichment MANDATORY cross-check. Use --keep-mismatch to override.
 
 Usage:
     source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh"
-    export $(grep -E '^PHANTOMBUSTER_API_KEY=' "$GTM_ENV_PATH" | xargs)
+    export $(grep -E '^(PHANTOMBUSTER_API_KEY|GOOGLE_CLIENT_SECRET_FILE|GOOGLE_AUTHORIZED_USER_FILE|PB_AGENT_EMAIL)=' "$GTM_ENV_PATH" | xargs)
     python3 pb_email_finder.py \
-        --input  csv/intermediate/contacts_filtered.csv \
-        --output csv/intermediate/contacts_pb_email.csv \
-        --staging-spreadsheet-id 1AbC...xyz
+        --input   csv/intermediate/contacts_filtered.csv \
+        --output  csv/intermediate/contacts_pb_email.csv \
+        --client-slug acme          # a fresh sheet is created automatically
 
 Column names default to the GTM people schema (snake_case) and are all overridable.
 """
@@ -64,33 +69,6 @@ PB_POLL_INTERVAL = 10
 PB_POLL_TIMEOUT = 600
 PB_BATCH_SIZE = 50
 PB_STAGING_TAB = "pb_email_staging"
-
-
-def load_env_file(keys):
-    """Fill os.environ for `keys` from the GTM .env (GTM_ENV_PATH) without overriding
-    already-exported values or CLI flags. Loading in-script avoids the fragile
-    `export $(grep|xargs)` idiom, which mangles values containing spaces — e.g. a
-    Google cred path under `.../Sales Agent Projects (Remote)/...`. Mirrors the
-    in-script load convention in _shared/phantombuster.md."""
-    path = os.environ.get("GTM_ENV_PATH") or str(Path.home() / ".env.gtm")
-    if not os.path.exists(path):
-        return
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if line.startswith("export "):
-                    line = line[7:]
-                if "=" not in line:
-                    continue
-                k, _, v = line.partition("=")
-                k = k.strip()
-                if k in keys and not os.environ.get(k):
-                    os.environ[k] = v.strip().strip('"').strip("'")
-    except OSError:
-        pass
 
 
 def pb_api(method, path, body, api_key):
@@ -181,7 +159,23 @@ def get_gspread_client():
         return None
 
 
-def ensure_staging_tab(sh):
+def create_fresh_staging(gc, title, share_anyone):
+    """Create a NEW blank spreadsheet for this run so rows from different projects
+    never mix. Returns (spreadsheet, worksheet). Link-shares read-only if requested
+    (PhantomBuster must be able to read the sheet — either via this link share or a
+    Google connection configured in the PB dashboard)."""
+    sh = gc.create(title)
+    if share_anyone:
+        try:
+            sh.share(None, perm_type="anyone", role="reader")
+        except Exception as e:
+            print(f"    WARN: could not link-share staging sheet ({e}); "
+                  f"PB may not be able to read it unless it's Google-connected")
+    return sh, sh.sheet1
+
+
+def open_staging_tab(sh):
+    """Legacy path: reuse a caller-provided spreadsheet, in a dedicated scratch tab."""
     try:
         return sh.worksheet(PB_STAGING_TAB)
     except Exception:
@@ -281,17 +275,21 @@ def fetch_email_results(container_id, agent_id, api_key):
 # ── Main ────────────────────────────────────────────────────────────────────
 
 def main():
-    # Self-load config from the GTM .env so the caller doesn't need the fragile
-    # `export $(grep|xargs)` (which breaks on space-containing paths). Already-set
-    # env vars and CLI flags still win.
-    load_env_file({"PHANTOMBUSTER_API_KEY", "PB_AGENT_EMAIL", "PB_EMAIL_STAGING_SHEET_ID",
-                   "GOOGLE_CLIENT_SECRET_FILE", "GOOGLE_AUTHORIZED_USER_FILE"})
-
     ap = argparse.ArgumentParser(description="Priority-1 email enrichment via PhantomBuster Email Finder")
     ap.add_argument("--input", required=True, help="Input contacts CSV")
     ap.add_argument("--output", required=True, help="Output CSV (original columns + email fields)")
-    ap.add_argument("--staging-spreadsheet-id", default=os.getenv("PB_EMAIL_STAGING_SHEET_ID", ""),
-                    help="Google Sheet ID to stage input rows (a `pb_email_staging` tab is created)")
+    ap.add_argument("--staging-spreadsheet-id", default="",
+                    help="OPTIONAL legacy mode: reuse an existing sheet (scratch tab `pb_email_staging`). "
+                         "Default is to CREATE A FRESH blank spreadsheet per run so rows from different "
+                         "projects/runs never mix.")
+    ap.add_argument("--client-slug", default="",
+                    help="Used in the fresh staging sheet's title so runs are identifiable")
+    ap.add_argument("--share-anyone", dest="share_anyone", action="store_true", default=True,
+                    help="Link-share the fresh sheet read-only so PhantomBuster can read it (default: on)")
+    ap.add_argument("--no-share", dest="share_anyone", action="store_false",
+                    help="Do NOT link-share (use only if PB reads your Drive via a Google connection)")
+    ap.add_argument("--keep-staging", action="store_true",
+                    help="Keep the fresh staging sheet after the run (default: trash it on success)")
     ap.add_argument("--agent-id", default=os.getenv("PB_AGENT_EMAIL", DEFAULT_PB_EMAIL_AGENT_ID),
                     help="PB Email Finder agent ID (default: PB_AGENT_EMAIL env or keinsaas fallback)")
     ap.add_argument("--first-col", default="first_name")
@@ -312,10 +310,6 @@ def main():
     api_key = os.getenv("PHANTOMBUSTER_API_KEY", "")
     if not api_key:
         print("N/A: PHANTOMBUSTER_API_KEY not set; skipping PB email finder", file=sys.stderr)
-        return 3
-    if not args.staging_spreadsheet_id:
-        print("N/A: no --staging-spreadsheet-id (or PB_EMAIL_STAGING_SHEET_ID); "
-              "skipping PB email finder", file=sys.stderr)
         return 3
 
     gc = get_gspread_client()
@@ -340,23 +334,37 @@ def main():
         _write_output(rows, args)
         return 0
 
-    try:
-        sh = gc.open_by_key(args.staging_spreadsheet_id)
-    except Exception as e:
-        print(f"N/A: cannot open staging spreadsheet ({e}); skipping PB email finder",
-              file=sys.stderr)
-        return 3
-    staging_ws = ensure_staging_tab(sh)
+    # Staging surface: fresh blank spreadsheet per run (default) OR a reused sheet.
+    fresh = not args.staging_spreadsheet_id
+    if fresh:
+        title = "gtm-pb-email-staging " + (args.client_slug + " " if args.client_slug else "") \
+                + date.today().isoformat()
+        try:
+            sh, staging_ws = create_fresh_staging(gc, title, args.share_anyone)
+        except Exception as e:
+            print(f"N/A: could not create staging spreadsheet ({e}); skipping PB email finder",
+                  file=sys.stderr)
+            return 3
+        print(f"Created fresh staging sheet: {title} (id={sh.id})")
+    else:
+        try:
+            sh = gc.open_by_key(args.staging_spreadsheet_id)
+        except Exception as e:
+            print(f"N/A: cannot open staging spreadsheet ({e}); skipping PB email finder",
+                  file=sys.stderr)
+            return 3
+        staging_ws = open_staging_tab(sh)
 
     batches = [eligible[i:i + args.batch_size] for i in range(0, len(eligible), args.batch_size)]
     result_map = {}   # (first, last, domain) -> email
     name_map = {}     # (first, last) -> email  (fallback when domain differs)
+    run_ok = True
 
     for bi, batch in enumerate(batches, 1):
         print(f"  [{bi}/{len(batches)}] staging {len(batch)} rows, launching agent...")
         try:
             write_staging_rows(staging_ws, batch, cols)
-            url = (f"https://docs.google.com/spreadsheets/d/{args.staging_spreadsheet_id}"
+            url = (f"https://docs.google.com/spreadsheets/d/{sh.id}"
                    f"/edit?gid={staging_ws.id}#gid={staging_ws.id}")
             csv_name = f"gtm_emails_{date.today().isoformat()}_b{bi}"
             container_id = launch_email_finder(url, csv_name, len(batch), args.agent_id, api_key)
@@ -370,6 +378,7 @@ def main():
             print(f"    [{bi}/{len(batches)}] {len(hits)} emails returned")
         except Exception as e:
             print(f"    WARN: batch {bi} failed ({e}); continuing")
+            run_ok = False
             continue
         for h in hits:
             k = (h["firstName"].lower(), h["lastName"].lower(), clean_domain(h["domain"]))
@@ -404,6 +413,20 @@ def main():
     print(f"\nPB Email Finder done: {found} emails written "
           f"(match={match}, subdomain={subdomain}, dropped_mismatch={mismatch}). "
           f"Remaining rows without an email fall through to FullEnrich.")
+
+    # Clean up the fresh staging sheet (recoverable — moves to Drive trash). Kept on
+    # failure so it can be inspected, or when --keep-staging is set.
+    if fresh:
+        sheet_url = f"https://docs.google.com/spreadsheets/d/{sh.id}"
+        if args.keep_staging or not run_ok:
+            why = "--keep-staging" if args.keep_staging else "a batch failed — kept for inspection"
+            print(f"Staging sheet retained ({why}): {sheet_url}")
+        else:
+            try:
+                gc.del_spreadsheet(sh.id)
+                print("Staging sheet trashed (recoverable in Drive trash).")
+            except Exception as e:
+                print(f"WARN: could not trash staging sheet ({e}); delete manually: {sheet_url}")
     return 0
 
 
