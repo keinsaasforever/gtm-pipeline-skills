@@ -367,7 +367,6 @@ Several providers have similarly-named products. Be explicit about which is mean
 
 | Product | Skill | Purpose | Notes |
 |---------|-------|---------|-------|
-| **PhantomBuster Email Finder** | people-enrichment | **Priority-1 email enrichment** | PB's built-in email waterfall (BetterContact et al.) via the "Email Finder" phantom. Input staged from a Google Sheet by `_shared/pb_email_finder.py`. **Runs first; if N/A (no PB key / staging sheet / Google OAuth → exit 3), skip to FullEnrich.** |
 | **BetterContact Lead Finder** | people-search | Synchronous people discovery API | Returns contacts by company + role filters |
 | **BetterContact async enrichment** | people-enrichment | Async email/phone enrichment | Slow due to multi-provider waterfall. Email hit rate is low (~14% in our tests) — **prefer FullEnrich for email**. Acceptable for phone if user has patience. |
 | **FullEnrich Finder** | people-search | People discovery (returns LinkedIn URLs) | Required upstream of FullEnrich Enrich for email |

@@ -50,7 +50,6 @@ PhantomBuster agent IDs are account-specific. **Do not hardcode them.** Three op
 | **Company enrichment** — SN account data (headcount, revenue, growth) | Sales Navigator Account Scraper.js | `PB_AGENT_SN_ACCOUNT` |
 | **People search** — employees at a company | LinkedIn Company Employees Export.js | `PB_AGENT_EMPLOYEES` |
 | **People search** — SN search export | Sales Navigator Search Export.js | `PB_AGENT_SN_SEARCH` |
-| **Email enrichment** — find professional emails (Priority 1 email provider) | Email Finder.js | `PB_AGENT_EMAIL` |
 | **Profile scraping** — full profile data | LinkedIn Profile Scraper.js | `PB_AGENT_PROFILE` |
 | **Signal search** — job postings export | LinkedIn Search Export.js | `PB_AGENT_JOB_SEARCH` |
 | **Warm-up** — like posts before outreach | LinkedIn Auto Liker.js | `PB_AGENT_LIKER` |
@@ -243,29 +242,6 @@ argument = json.dumps({
     "numberOfAddsPerLaunch": 1,
     "enrichWithCompanyData": True,
 })
-```
-
-### Email Finder (email enrichment — Priority 1 email provider)
-**Data phantom — no `sessionCookie` / `userAgent`.** Reads its input from a Google
-Sheet tab whose columns are firstName / lastName / companyName / companyWebsite.
-Don't hand-roll this — the reusable engine `_shared/pb_email_finder.py` does the
-staging → launch → poll → fetch → domain-check → CSV write-back. See
-`gtm-people-enrichment` **Provider 0**. Argument shape, for reference:
-```python
-argument = json.dumps({
-    "csvName": "gtm_emails_2026_07_10_b1",
-    "emailChooser": "phantombuster",          # PB's built-in email waterfall (BetterContact et al.)
-    "spreadsheetUrl": staging_sheet_url,        # a tab you own with the 4 columns below
-    "firstNameColumn": "firstName",
-    "lastNameColumn": "lastName",
-    "domainNameColumn": "companyWebsite",
-    "companyNameColumn": "companyName",
-    "customSpreadsheet": True,
-    "numberOfLinesPerLaunch": line_count,
-})
-# Results: GET containers/fetch-result-object?id=<container> → resultObject (JSON).
-# ~1 credit per email found. If PHANTOMBUSTER_API_KEY / staging sheet / Google OAuth
-# is missing, the engine exits 3 → skip and fall through to FullEnrich.
 ```
 
 ### LinkedIn Job Export (Signal Search)
