@@ -41,20 +41,23 @@ You don't need all of these. Fill in only the ones you plan to use.
 
 ---
 
-## PhantomBuster Email Finder staging (optional)
+## PhantomBuster Email Finder staging (Google OAuth)
 
 The Email Finder phantom (`PB_AGENT_EMAIL`) reads its input from a Google Sheet.
-`_shared/pb_email_finder.py` stages contacts into a `pb_email_staging` tab in a
-sheet you own. Point it at that sheet, and give it Google OAuth. Add to your `.env`:
+`_shared/pb_email_finder.py` **creates a fresh blank sheet for every run** (so different
+projects/runs never share rows), link-shares it so PB can read it, then trashes it.
+It just needs Google OAuth — **no pre-existing sheet ID.** Add to your `.env`:
 
 ```
-PB_EMAIL_STAGING_SHEET_ID=<the spreadsheet ID to stage into>
 GOOGLE_CLIENT_SECRET_FILE=/path/to/google_client_secret.json
-GOOGLE_AUTHORIZED_USER_FILE=/path/to/authorized_user.json   # optional; created on first OAuth
+GOOGLE_AUTHORIZED_USER_FILE=/path/to/authorized_user.json   # token; created on first OAuth
 ```
 
-If any of these (or `PHANTOMBUSTER_API_KEY`) is absent, the email finder exits 3 and
+If either of these (or `PHANTOMBUSTER_API_KEY`) is absent, the email finder exits 3 and
 the waterfall simply starts at FullEnrich instead — PB is never required.
+
+The OAuth token needs the `spreadsheets` + `drive` scopes (to create and trash the
+staging sheet). You can reuse a token from another project that already has them.
 
 ---
 

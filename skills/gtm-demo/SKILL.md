@@ -109,7 +109,7 @@ For demos: use a relaxed hard-reject threshold (allow tiers 1–5 to pass), prio
 Run **people-enrichment** on the filtered contacts. **Demo mode: email only, no phone.**
 
 Recommended flow (email waterfall — same hierarchy as people-enrichment):
-1. **PhantomBuster Email Finder** — all contacts, **if available**. PB's built-in email waterfall (BetterContact et al.); needs `PHANTOMBUSTER_API_KEY` + a Google Sheet to stage. See people-enrichment **Provider 0**. **If N/A (engine exits 3), skip it** and start at FullEnrich — a ~10-contact demo must never block on PB.
+1. **PhantomBuster Email Finder** — all contacts, **if available**. PB's built-in email waterfall (BetterContact et al.); needs `PHANTOMBUSTER_API_KEY` + Google OAuth (the engine creates a fresh staging sheet per run automatically). See people-enrichment **Provider 0**. **If N/A (engine exits 3), skip it** and start at FullEnrich — a ~10-contact demo must never block on PB.
 2. FullEnrich v2 (email) — contacts still missing an email after step 1
 3. Pipe0 waterfall — for remaining misses only
 
