@@ -1,6 +1,6 @@
 ---
 name: gtm-pipeline:company-search
-description: Build a list of companies matching ICP criteria. Use when a client needs a company list — no existing list, wants to expand, or signal-based discovery needs enrichment. Providers: Sales Navigator + PhantomBuster, Parallel FindAll, Firecrawl Agent, BC/FE byproduct, web scraping. Also triggers on "build company list", "find companies", "company search".
+description: Build a list of companies matching ICP criteria. Use when a client needs a company list — no existing list, wants to expand, or signal-based discovery needs enrichment. Providers: Sales Navigator + PhantomBuster, Parallel FindAll, Firecrawl Agent, Pipe0 Amplemarket, BC/FE byproduct, web scraping. Also triggers on "build company list", "find companies", "company search".
 ---
 
 # Company Search
@@ -13,8 +13,8 @@ Build a list of companies matching ICP criteria. Returns a CSV with domains and 
 
 ## When to Use
 
-- **Workflow 1 (Company-First):** Client needs a company list — no existing list, or wants to expand beyond what they have
-- **Workflow 2 (Signal-First):** Signal-based discovery has found companies — this skill enriches the initial list with domains/LinkedIn URLs if missing
+- **Company-First workflow:** Client needs a company list — no existing list, or wants to expand beyond what they have
+- **Signal-First workflow:** Signal-based discovery has found companies — this skill enriches the initial list with domains/LinkedIn URLs if missing
 
 ## Inputs
 
@@ -165,7 +165,7 @@ GET https://serpapi.com/search
   &api_key=$SERPAPI_API_KEY
 ```
 
-Extract: `urllib.parse.urlparse(organic_results[0]["link"]).netloc.lstrip("www.")`
+Extract: `urllib.parse.urlparse(organic_results[0]["link"]).netloc.removeprefix("www.")`
 
 Always spot-check domains — SerpAPI returns wrong results for generic names and global brands.
 
@@ -180,7 +180,7 @@ Poll:    GET /api/v2/agents/fetch?id=<agent_id>  (status == "finished")
 Result:  GET /api/v2/containers/fetch-result-object  (or download S3 CSV)
 ```
 
-Agent IDs and detailed API: see PhantomBuster API learnings doc (requested at runtime if needed).
+Agent IDs: `_shared/local.md` (PB_AGENT_* table). Detailed API + in-script env loading: `_shared/phantombuster.md`.
 
 ---
 
@@ -219,15 +219,16 @@ CSV at `csv/input/companies_raw.csv`:
 
 ```
 company_name, company_domain, company_linkedin_url,
-industry, location, country, headcount, headcount_range,
+company_industry, company_hq_location, company_hq_country,
+company_employee_count, company_employee_range,
 source
 ```
 
 Additional fields from SN (if available):
 ```
-salesNavigatorCompanyUrl, employeeSearchUrl, decisionMakersSearchUrl,
-yearFounded, revenue_range, growth_6m, growth_1y, growth_2y,
-headcount_engineering, headcount_sales, headcount_operations, headcount_IT
+sales_navigator_company_url, employee_search_url, decision_makers_search_url,
+year_founded, revenue_range, growth_6m, growth_1y, growth_2y,
+headcount_engineering, headcount_sales, headcount_operations, headcount_it
 ```
 
 ---

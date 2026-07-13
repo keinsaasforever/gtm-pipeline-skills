@@ -235,7 +235,7 @@ Do not silently swap models; the routing above is the convention (see `_shared/c
 
 ## Input CSV
 
-Default location: `csv/input/companies_raw.csv`. Required columns (the script tolerates alternative names):
+Default location: `csv/input/companies_raw.csv`. In the Company-First workflow the input is the gated scored list, not the raw list: filter `csv/intermediate/companies_scored.csv` to `icp_score >= 70` (if gating) and pass that file via `--input-csv`. Required columns (the script tolerates alternative names):
 
 | Canonical | Alternatives accepted |
 |-----------|----------------------|

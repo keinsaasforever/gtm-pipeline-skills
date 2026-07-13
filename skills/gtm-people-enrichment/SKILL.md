@@ -1,6 +1,6 @@
 ---
 name: gtm-pipeline:people-enrichment
-description: Enrich contacts with work email, phone number, and/or LinkedIn URL. Use when you have a contact list that needs enrichment before outreach. Email waterfall (FullEnrich → Pipe0), phone (BetterContact → FullEnrich). Enforces demo mode (email only, no phone). Also triggers on "enrich contacts", "find emails for", "get phone numbers for".
+description: Enrich contacts with work email, phone number, and/or LinkedIn URL. Use when you have a contact list that needs enrichment before outreach. Email waterfall (FullEnrich → Pipe0), phone (FullEnrich → Pipe0 → BetterContact). Enforces demo mode (email only, no phone). Also triggers on "enrich contacts", "find emails for", "get phone numbers for".
 ---
 
 # People Enrichment
@@ -21,7 +21,7 @@ Enrich contacts with work email, phone number, and/or LinkedIn URL. Returns an u
 
 | Input | Required | Source |
 |-------|----------|--------|
-| Contact CSV | Yes | People Search output or user-provided |
+| Contact CSV | Yes | Contact Filter output (`csv/intermediate/contacts_filtered.csv`); People Search output if the filter was skipped; or user-provided |
 | LinkedIn profile URLs | Recommended | In CSV or from People Search |
 | Company domains | Recommended | In CSV |
 | Enrichment type | Yes | `email`, `phone`, or `both` |
@@ -46,7 +46,7 @@ When invoked from the demo flow: **email only, skip all phone providers entirely
 | 2nd | **Pipe0 waterfall** | 60% (SA), 83% (DACH) | 1.0–3.5 cr/contact | ~3 min/20 contacts | Solid backup |
 | 3rd | **BetterContact** (email-only) | ~60% test / **14% production SA** | 0.35 cr/contact | 30–90 min | Not recommended — slow, unreliable production |
 
-**Recommended flow (email waterfall):** FE Enrich (v2) → BC → Pipe0 pipes → Amplemarket/Crustdata (last resort). FE is **email-first** because BC async email hit rate is low (~14% production SA). **Max 2 attempts per source**, then fall through. Mirrors conventions **People-Source Cadence**.
+**Recommended flow (email waterfall):** FE Enrich (v2) → Pipe0 waterfall → BC (last resort). FE is **email-first**; BC drops to last for email because its async email hit rate is low (~14% production SA). **Max 2 attempts per source**, then fall through. The order follows the email priority table above (for email, BC ranks below Pipe0, unlike the finder cadence in conventions).
 
 ### Domain-Identity Cross-Check (critical)
 
@@ -352,13 +352,13 @@ https://doc.bettercontact.rocks
 
 ## Output
 
-Updated CSV at `csv/output/contacts_enriched.csv` with added columns:
+Full data at `csv/intermediate/contacts_enriched.csv` with added columns:
 ```
 email, email_status, email_source,
 phone, phone_source
 ```
 
-All original columns preserved.
+All original columns preserved there. The lead-facing `csv/output/contacts_enriched.csv` is the sanitized view (bad-status emails dropped, provider/status/source columns stripped, all-empty columns removed).
 
 ---
 

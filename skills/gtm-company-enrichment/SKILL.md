@@ -1,6 +1,6 @@
 ---
 name: gtm-pipeline:company-enrichment
-description: Enrich a company list with structured data and score against ICP. Phase 1: data enrichment (PhantomBuster SN, Parallel Task Group, SimilarWeb, Firecrawl, SerpAPI). Phase 2: ICP scoring via LLM (icp_score 0-100, optional gate ≥70). Use after company-search and before signal-search. Also triggers on "enrich companies", "ICP scoring", "score companies".
+description: Enrich a company list with structured data and score against ICP. Phase 1: data enrichment (PhantomBuster SN, Parallel Task Group, SimilarWeb, Firecrawl, SerpAPI). Phase 2: ICP scoring by the agent (icp_score 0-100, optional gate ≥70). Use after company-search and before signal-search. Also triggers on "enrich companies", "ICP scoring", "score companies".
 ---
 
 # Company Enrichment
@@ -21,7 +21,7 @@ Enrich a company list with structured data and score against ICP. Returns enrich
 
 | Input | Required | Source |
 |-------|----------|--------|
-| Company CSV | Yes | Company Search output or user-provided |
+| Company CSV | Yes | Company Search output (`csv/input/companies_raw.csv`) or user-provided |
 | ICP definition | Yes | `context/icp.md` or user prompt |
 
 ---
@@ -42,6 +42,8 @@ Add structured company data. Choose provider based on what's available:
 | **Pipe0 company data** | TBD — not yet tested | Domain | TBD | Check pipe0 catalog |
 
 **Ask the user which provider to use.** Default: PB SN Scraper if SN URLs available, otherwise Parallel Task Group.
+
+**Before the full batch:** state the estimated cost (rows x per-row cost from the table) and get user approval; test 5-15 rows first (conventions cross-cutting rule 2).
 
 ### Phase 2: ICP Scoring
 
@@ -111,7 +113,7 @@ Write to `csv/intermediate/companies_enriched.csv`. Preserve all original column
 4. Write score back to CSV
 5. Process in batches (~10–20 companies per loop)
 
-**LLM:** Ask the user which model to use (any LLM with structured output / JSON mode works).
+**Scoring is done by the agent** (sonnet tier suffices, see conventions Model Routing), never a third-party LLM API on the default path. Do not ask the user for a model.
 
 ### Input Fields Used for Scoring
 
@@ -165,8 +167,8 @@ company_name, company_domain, company_linkedin_url,
 company_industry, company_hq_location, company_hq_country,
 company_employee_count, company_employee_range,
 revenue_range, growth_6m, growth_1y, growth_2y,
-headcount_engineering, headcount_sales, headcount_operations, headcount_IT,
-icp_score, icp_rationale, enrichment_source
+headcount_engineering, headcount_sales, headcount_operations, headcount_it,
+icp_score, icp_rationale, scoring_status, enrichment_source
 ```
 
 ---

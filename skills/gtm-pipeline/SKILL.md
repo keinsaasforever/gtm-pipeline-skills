@@ -1,6 +1,6 @@
 ---
 name: gtm-pipeline:pipeline
-description: Plan and execute a full GTM lead generation pipeline. Use when a client needs end-to-end pipeline orchestration — from company discovery to enriched contacts. Determines workflow (Company-First vs Signal-First), assesses starting data, plans skill sequence with cost estimates, and chains skill outputs. Also triggers on "run the pipeline", "start pipeline for [client]", "full pipeline", "Stripe payment trigger".
+description: Plan and execute a full GTM lead generation pipeline, from company discovery to enriched contacts. Use when a client needs end-to-end orchestration spanning multiple GTM skills: determines Company-First vs Signal-First workflow, assesses starting data, plans the skill sequence with cost estimates for user approval, then chains skill outputs. Not for demo requests (use gtm-demo) or single-step requests (invoke that skill directly). Also triggers on "run the pipeline", "start pipeline for [client]", "full pipeline", "Stripe payment trigger".
 ---
 
 # Pipeline
@@ -79,7 +79,7 @@ In Signal-First, signal-search runs on **raw company names from the discovery ch
 | Company list provided | company-enrichment → (optional: signal-search) → people-search → contact-filter → people-enrichment |
 | Contacts CSV provided | people-enrichment only |
 | Persona prospecting (no companies) | people-search (persona mode) → contact-filter → people-enrichment |
-| Full pipeline (Stripe payment) | Full Workflow 1 or 2 based on requirements |
+| Full pipeline (Stripe payment) | Full Company-First or Signal-First workflow based on requirements |
 
 ---
 
@@ -117,9 +117,9 @@ Based on workflow + starting point, build the execution plan:
 1. **List which skills run**, in what order
 2. **Recommend providers** at each step (with costs from skill docs)
 3. **Estimate total credits and cost** across all steps
-4. **Identify n8n flow customizations** needed:
-   - ICP Google Doc (for ICP scoring in company-enrichment)
-   - Offering section (for signal scoring in signal-search)
+4. **Identify per-client customizations** needed:
+   - ICP Google Doc or `context/icp.md` (for ICP scoring in company-enrichment)
+   - `context/offering.md` + `context/signal_criteria.md` (for signal-search; see Step 6, no n8n edits needed)
 5. **Present plan for user approval** before executing anything
 
 ### Cost Estimation Template
@@ -138,15 +138,14 @@ Based on workflow + starting point, build the execution plan:
 - Est. cost: {credits} credits (~${cost})
 
 ### Step 3: ICP Scoring
-- LLM: [ask user which model]
+- Scoring: done by the agent (see Model Routing in conventions.md), no third-party LLM cost
 - Records: ~{n}
-- Est. cost: ~${cost} (LLM token pricing)
 
 ### Step 4: Signal Search (companies with icp_score >= 70 if gating)
 - Sources: [which of the 4 sources]
-- LLM for scoring: [ask user]
+- Scoring: done by the agent (opus, see Model Routing in conventions.md)
 - Records: ~{n} (est. {pct}% pass ICP gate, or full set if no gate)
-- Est. cost: {credits} credits + ~${llm_cost}
+- Est. cost: {credits} credits
 
 ### Step 5: People Search
 - Provider: [recommended]
@@ -204,7 +203,7 @@ Print the standardized Run Summary (from conventions.md) and ask:
 
 ## Step 6 — Customize Per Client
 
-### ICP Scoring (company-enrichment Phase 2 — n8n-backed)
+### ICP Scoring (company-enrichment Phase 2)
 - Create/connect a Google Doc with the client's ICP definition
 - Or write to `context/icp.md` and use that as the reference
 - Adjust score threshold (default: >= 70) based on selectivity
@@ -227,31 +226,7 @@ No n8n workflow edits are required for signal-search anymore — the script read
 
 ## Working Directory
 
-The pipeline creates and manages the full directory structure:
-
-```
-{client-slug}-gtm/
-├── context/
-│   ├── icp.md
-│   └── provider_performance.md
-├── prompts/
-│   └── message_prompt.md          (demo only)
-├── csv/
-│   ├── input/
-│   │   ├── companies_raw.csv
-│   │   └── contacts_raw.csv
-│   ├── intermediate/
-│   │   ├── companies_enriched.csv
-│   │   ├── companies_scored.csv
-│   │   ├── signals.csv
-│   │   ├── contacts_found.csv
-│   │   ├── contacts_filtered.csv
-│   │   └── request_ids.json
-│   └── output/
-│       ├── contacts_enriched.csv
-│       └── messages.csv           (demo only)
-└── run_log.md
-```
+The pipeline creates and manages the full `{client-slug}-gtm/` directory structure. The authoritative tree and file paths are defined in `_shared/conventions.md` (Working Directory section); the key handoff files are listed in the Chaining Rules table above.
 
 ---
 
@@ -265,7 +240,7 @@ IF user has contacts CSV:
   → people-enrichment only
 
 IF user has company list:
-  → company-enrichment → (optional: signal-search) → people-search → people-enrichment
+  → company-enrichment → (optional: signal-search) → people-search → contact-filter → people-enrichment
 
 IF user has nothing (just ICP):
   → Ask: Company-First or Signal-First?
