@@ -262,7 +262,7 @@ source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
 To inject multiple keys at once (anchor patterns with `^` so values can't match):
 ```bash
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-  export $(grep -E '^(PIPE0_API_KEY|FULLENRICH_API_KEY|BETTERCONTACT_API_KEY|PARALLEL_API_KEY|SERPAPI_KEY|APIFY_API_TOKEN)=' "$GTM_ENV_PATH" | xargs) && python3 script.py
+  export $(grep -E '^(PIPE0_API_KEY|FULLENRICH_API_KEY|BETTERCONTACT_API_KEY|PARALLEL_API_KEY|SERPAPI_API_KEY|APIFY_API_KEY)=' "$GTM_ENV_PATH" | xargs) && python3 script.py
 ```
 
 | Variable | Service | Used by |
