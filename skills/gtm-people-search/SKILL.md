@@ -78,7 +78,7 @@ Env var: `SERPAPI_API_KEY`
 1. **Tier 1** — E-commerce + Marketing titles (always run)
 2. **Tier 2** — Leadership titles (CEO/MD/Founder) — only if Tier 1 returns 0 contacts AND company traffic ≤ 200K visits/month (large shops likely have dedicated e-comm/marketing staff indexed by FE)
 
-Run the same two-tier logic for both BC (primary) and FE (fallback). BC cost is per-request regardless of results; FE cost is per-person returned.
+Run the same two-tier logic on whichever finder leads the cadence for the segment (FE or BC). BC cost is per-request regardless of results; FE cost is per-person returned.
 
 When PhantomBuster is selected: read `_shared/phantombuster.md` and use the `/phantombuster` skill to generate the script. Phantom scripts: "LinkedIn Company Employees Export" (config key `PB_AGENT_EMPLOYEES`) and "Sales Navigator Search Export" (config key `PB_AGENT_SN_SEARCH`).
 

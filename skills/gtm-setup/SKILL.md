@@ -64,11 +64,14 @@ Walk through each key. For each one, check if it's already set in the env file. 
 | `FIRECRAWL_API_KEY` | Firecrawl | Website crawl, signal search | firecrawl.dev |
 | `PHANTOMBUSTER_API_KEY` | PhantomBuster | LinkedIn automation | phantombuster.com |
 | `LINKEDIN_SESSION_COOKIE` | LinkedIn | PhantomBuster auth | Your browser (see below) |
+| `LINKEDIN_USER_AGENT` | LinkedIn | PhantomBuster auth (browser user agent string) | Your browser (see below) |
 | `OPENROUTER_API_KEY` | OpenRouter | Signal LLM — **legacy/optional** (only for `signal_search.py --llm-backend openrouter`) | openrouter.ai |
 
-**Optional:** If user won't use PhantomBuster (no LinkedIn automation), skip `PHANTOMBUSTER_API_KEY`, `LINKEDIN_SESSION_COOKIE`. `OPENROUTER_API_KEY` is **not needed by default** — signal-search's default `agent` backend has the Claude agent score in-context (see signal-search → Model Routing).
+**Optional:** If user won't use PhantomBuster (no LinkedIn automation), skip `PHANTOMBUSTER_API_KEY`, `LINKEDIN_SESSION_COOKIE`, `LINKEDIN_USER_AGENT`. For the PhantomBuster Email Finder (Priority-1 email enrichment) also set `GOOGLE_CLIENT_SECRET_FILE` and `GOOGLE_AUTHORIZED_USER_FILE` (see `_shared/local.example.md`); without them the email waterfall simply starts at FullEnrich. `OPENROUTER_API_KEY` is **not needed by default**: signal-search's default `agent` backend has the Claude agent score in-context (see signal-search → Model Routing).
 
 **For `LINKEDIN_SESSION_COOKIE`:** Tell the user to open LinkedIn in Chrome, go to DevTools → Application → Cookies → `li_at` value.
+
+**For `LINKEDIN_USER_AGENT`:** the exact user agent string of that same browser (DevTools console: `navigator.userAgent`). PB scripts require it alongside the cookie.
 
 **Minimum viable set (to run a basic demo):** `PIPE0_API_KEY`, `FULLENRICH_API_KEY`, `SERPAPI_API_KEY`, `PARALLEL_API_KEY`, `FIRECRAWL_API_KEY`. (No LLM key needed — the agent scores signals in-context. `OPENROUTER_API_KEY` only if you opt into the legacy `openrouter` signal backend.)
 
@@ -106,6 +109,7 @@ If the PhantomBuster MCP is available, use `PHANTOMBUSTER_GET_AGENTS_FETCH_ALL` 
 | `PB_AGENT_SN_ACCOUNT` | Sales Navigator Account Scraper |
 | `PB_AGENT_EMPLOYEES` | LinkedIn Company Employee Finder / LinkedIn Search Export |
 | `PB_AGENT_SN_SEARCH` | Sales Navigator Search Export |
+| `PB_AGENT_EMAIL` | Email Finder |
 | `PB_AGENT_PROFILE` | LinkedIn Profile Scraper |
 | `PB_AGENT_JOB_SEARCH` | LinkedIn Search Export (jobs mode) |
 | `PB_AGENT_LIKER` | LinkedIn Auto Liker |

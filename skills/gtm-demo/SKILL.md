@@ -23,6 +23,7 @@ Generate a demo lead list of ~10 enriched contacts with personalized message exa
 - **~10 contacts** (request 10–15, expect enrichment drop-off)
 - Message generation is optional but recommended
 - **Signal search is opt-in** — off by default. Enable via `--with-signals` flag or explicit user request. See Step 5.5.
+- **Cost gate:** before the first paid provider call, state the expected spend (finder searches per People-Source Cadence are mostly free; ~10-15 email enrichment credits; signals <$0.50 if enabled). Interactive: confirm with the user first. Headless: log the estimate in `run_log.md` and proceed, never block.
 
 ---
 
@@ -124,6 +125,8 @@ Additional enrichment for message personalization (if available):
 name, job_title, company_name, linkedin_profile_url,
 headline (optional), summary (optional), recent_posts (optional)
 ```
+
+**Low yield:** if fewer than ~8 contacts survive filtering + enrichment, run one additional finder pass (next source in the People-Source Cadence) before proceeding to messages.
 
 ---
 
