@@ -31,7 +31,7 @@ INTERNAL_COLUMNS = {
     "fe_company_name", "fe_company_domain", "bc_company_name", "raw_status",
     "email_status", "phone_status",
     "seniority", "seniority_level", "request_id", "task_id", "credits",
-    "domain_verified", "domain_match", "identity_match", "needs_review",
+    "domain_verified", "domain_match", "identity_match", "needs_review", "email_domain_check",
     "_needs_agent_processing", "overallsummary", "websitesignals", "websearchsignals",
     "parallelenrichment", "scoredsignals", "lastrun",
 }
@@ -40,6 +40,10 @@ INTERNAL_PREFIXES = ("fe_", "bc_", "pipe0_", "_", "provider_", "raw_")
 # ── Email deliverability policy ──
 # Statuses are normalized to UPPER_SNAKE before comparison. The real anti-"made-up-address"
 # guard is the domain-identity cross-check upstream (people-enrichment) — this is the last net.
+# UNGRADED (PhantomBuster: the phantom returns an address and no verdict at all) is deliberately
+# absent from every policy but "any": an ungraded address must be verified before it ships to a
+# lead, or be shown as unverified. A run that wants them in the CSV passes email_policy="any"
+# and labels them; it does not get them silently through "standard".
 EMAIL_POLICIES = {
     # keinsaas default: keep deliverable, high-probability, and catch-all (usually usable on
     # corporate domains); drop unknown/risky/invalid/undeliverable.

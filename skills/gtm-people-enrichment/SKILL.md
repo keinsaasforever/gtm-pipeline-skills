@@ -154,10 +154,12 @@ Then run the FullEnrich pass (Provider 1) on the rows that still have **no email
 ### Behaviour
 - **Fresh sheet per run.** A new blank spreadsheet `gtm-pb-email-staging {slug} {date}` is created, link-shared read-only (so PB can read it), used, then trashed on success (kept on failure or with `--keep-staging`; `--no-share` if your PB reads Drive via a Google connection instead).
 - Column names default to the GTM people schema (`first_name`, `last_name`, `company_name`, `company_domain`, `email`, `email_status`, `email_source`) — all overridable via flags.
-- Only rows with **first + last + domain** are sent to PB; the rest fall through untouched.
+- Only rows with **first + last + domain** and **no email yet** are sent to PB; the rest fall through untouched. (Before 2026-09-18 it staged rows that already had an email too, and PB bills per email found, so those were paid for twice and then discarded by the write-back.)
 - Batches of 50. Per batch: stage → launch → wait 180s → poll (10s, 600s cap) → fetch `resultObject` (console-log regex fallback).
 - **Domain-identity cross-check is applied automatically.** An email whose domain doesn't belong to the target company is **dropped** (left blank → falls through to FE), honouring the MANDATORY cross-check below. Use `--keep-mismatch` only if you deliberately want to keep them.
-- Sets `email_source = "phantombuster"` and `email_status` = `match` / `subdomain` on kept emails. `~1 credit per email found`.
+- The verdict has four values: `match`, `subdomain`, **`other_tld`**, `mismatch`. `other_tld` = same brand label, different TLD, and it is dropped like a mismatch: on 2026-09-17 PB returned `morten.kjaerland@obos.fr` (French OBOS) for a contact at `obos.no` and the old TLD-agnostic check graded it `match`. A real parent domain (`stena.com` for a `stenafastigheter.se` contact) also lands here — confirm it by hand before keeping it.
+- Sets `email_source = "phantombuster"`, `email_status = "UNGRADED"`, and the domain verdict in its own `email_domain_check` column. `~1 credit per email found`.
+- ⚠ **PB grades nothing** (312 measured rows: an address or an error, never a status). `sanitize.py`'s `standard` policy therefore **drops every PB address** from the lead-facing output by design. If PB is your only source for a contact, either verify the address first or ship it labelled unverified (deck badge `est-warn`, LinkedIn draft only) — do not pass `email_policy="any"` to slip ungraded addresses into a client CSV unlabelled.
 
 ### Notes
 - Agent ID is account-specific; the engine's built-in default is the keinsaas account's — **resolve your own** via `PB_AGENT_EMAIL`.
@@ -178,24 +180,35 @@ Then run the FullEnrich pass (Provider 1) on the rows that still have **no email
   "name": "My enrichment job",
   "data": [
     {
-      "firstname": "Jane",
-      "lastname": "Doe",
+      "first_name": "Jane",
+      "last_name": "Doe",
       "domain": "example.com",
+      "company_name": "Example GmbH",
       "linkedin_url": "https://www.linkedin.com/in/janedoe",
-      "enrich_fields": ["contact.emails"],
+      "enrich_fields": ["contact.work_emails"],
       "custom": {"row_id": "0"}
     }
   ]
 }
 ```
 
-For phone: `"enrich_fields": ["contact.phones"]` or both: `["contact.emails", "contact.phones"]`
+For phone: `"enrich_fields": ["contact.phones"]` or both: `["contact.work_emails", "contact.phones"]`.
+Personal addresses are a third value, `contact.personal_emails` (3 credits when found, vs 1 for a
+work email) — do not request it unless the client asked for personal addresses.
+
+⚠ **Field names, verified against the v2 docs 2026-09-17:** `first_name` / `last_name` (snake_case)
+and `enrich_fields: ["contact.work_emails"]`. This block previously said `firstname` / `lastname` /
+`contact.emails`; those are v1-era names. Either `first_name + last_name + (domain | company_name)`
+or `linkedin_url` is required per contact.
 
 ### Poll
 ```
 GET https://app.fullenrich.com/api/v2/contact/enrich/bulk/{enrichment_id}
 ```
-Done when: `response["status"] == "FINISHED"`
+Done when `response["status"]` leaves `CREATED` / `IN_PROGRESS`. Full enum: `CREATED`,
+`IN_PROGRESS`, `FINISHED`, `CANCELED`, `CREDITS_INSUFFICIENT`, `RATE_LIMIT`, `UNKNOWN` — poll until
+the status is none of the first two, then read `data[]` (a `CREDITS_INSUFFICIENT` batch still
+carries the rows it managed to enrich).
 Speed: **usually instant** — often finished before first poll. Use 15s interval, 600s timeout.
 
 ### Parse
@@ -225,7 +238,8 @@ for entry in result.get("data", []):
 - Email: `contact_info.most_probable_work_email.email`
 - Phone: `contact_info.phones[0].number`
 - If credits run out mid-batch: `status = "CREDITS_INSUFFICIENT"`, partial results returned
-- Email status values: `DELIVERABLE`, `HIGH_PROBABILITY`, `CATCH_ALL`
+- Email status values: `DELIVERABLE`, `HIGH_PROBABILITY`, `CATCH_ALL`, plus `INVALID` /
+  `INVALID_DOMAIN` (drop those; they are not in any sanitize policy)
 
 ### Cost
 ~0.8 credits/contact

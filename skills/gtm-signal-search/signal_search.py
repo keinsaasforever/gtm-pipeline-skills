@@ -110,7 +110,33 @@ Recent news, press releases, or announcements about {company_name} ({website}) *
 Focus on concrete business developments, not company descriptions. Always ensure \
 the result/post actually has to do with {company_name}, not a different company \
 with a similar name.
+
+The subject of every result must be {company_name} itself. Exclude pages about any vendor, \
+tool or software named above, that vendor's own website, and company-data aggregator profiles \
+(Tracxn, Crunchbase, ZoomInfo, Pitchbook, Owler and similar).
 """
+
+
+def objective_bullets(signal_criteria: str) -> str:
+    """Only the INCLUDE half of signal_criteria.md belongs in a search query.
+
+    The file ends with a "Not a signal:" exclude block that names what to ignore — including,
+    in a normal client file, the seller's own product ("evidence the company already uses X").
+    Interpolated into the objective, that turns the seller's name into a search term: the
+    Reduzer run (2026-09-17) got reduzer.com pages and the vendor's own Tracxn profile back as
+    "evidence" for small Norwegian contractors. The exclude half still reaches extraction and
+    scoring through build_include_exclude_block(); it just never reaches the query.
+    """
+    out = []
+    for line in signal_criteria.splitlines():
+        stripped = line.strip().lstrip("#*_ ").lower()
+        if stripped.startswith(("not a signal", "exclude", "not signals")):
+            break
+        if line.lstrip().startswith("#"):
+            continue  # headings are titles ("# Signal criteria — Acme"), and they carry the
+                      # seller's name into the query just as the exclude block did
+        out.append(line)
+    return "\n".join(out).strip() or signal_criteria.strip()
 
 # Web search extraction LLM — turns Parallel search results into structured signals.
 WEB_SEARCH_EXTRACTION_SYSTEM = (
@@ -492,7 +518,7 @@ def parallel_web_search(
         company_name=company_name,
         website=website,
         lookback_months=lookback_months,
-        signal_bullets=signal_criteria,
+        signal_bullets=objective_bullets(signal_criteria),
     )
     body = {
         "objective": objective,

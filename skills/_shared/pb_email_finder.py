@@ -15,8 +15,10 @@ input from a Google Sheet (`spreadsheetUrl`). This engine therefore:
   3. launches the phantom pointed at that sheet,
   4. polls the container to completion,
   5. fetches the result object, maps emails back by (first, last, domain),
-  6. writes email / email_status / email_source into an output CSV (all original
-     columns preserved),
+  6. writes email / email_status / email_source / email_domain_check into an output CSV
+     (all original columns preserved). PB grades no address, so email_status is always
+     "UNGRADED" — which sanitize.py's standard policy DROPS. Verify a PB address before it
+     ships to a lead, or ship it flagged as unverified,
   7. trashes the staging sheet (recoverable) on success — kept on failure or with
      --keep-staging.
 (Legacy: pass --staging-spreadsheet-id to reuse one sheet's `pb_email_staging` tab.)
@@ -113,7 +115,14 @@ def _extract_sld(domain):
 
 
 def email_domain_matches(email, company_domain):
-    """Return match | subdomain | mismatch | "" — TLD-agnostic on the brand label."""
+    """Return match | subdomain | other_tld | mismatch | "".
+
+    `other_tld` = same brand label, different TLD (obos.fr vs obos.no). That is usually a
+    DIFFERENT legal entity in another country (measured 2026-09-17: PB returned
+    morten.kjaerland@obos.fr for a contact at obos.no), occasionally a real parent domain
+    (stena.com for stenafastigheter.se). It is never safe to auto-keep: callers drop it like a
+    mismatch unless a human confirms the domain belongs to the target.
+    """
     if not email or "@" not in email:
         return ""
     e = email.split("@", 1)[1].strip().lower()
@@ -126,7 +135,7 @@ def email_domain_matches(email, company_domain):
         return "subdomain"
     e_sld, c_sld = _extract_sld(e), _extract_sld(c)
     if e_sld and c_sld and e_sld == c_sld:
-        return "match"
+        return "other_tld"
     return "mismatch"
 
 
@@ -298,6 +307,8 @@ def main():
     ap.add_argument("--domain-col", default="company_domain")
     ap.add_argument("--email-col", default="email")
     ap.add_argument("--status-col", default="email_status")
+    ap.add_argument("--domain-check-col", default="email_domain_check",
+                    help="Column for the domain-identity verdict (match/subdomain/other_tld)")
     ap.add_argument("--source-col", default="email_source")
     ap.add_argument("--batch-size", type=int, default=PB_BATCH_SIZE)
     ap.add_argument("--keep-mismatch", action="store_true",
@@ -323,11 +334,14 @@ def main():
         return 0
 
     # PB Email Finder needs first + last + domain. Rows missing any are left blank
-    # (they fall through to the next provider in the waterfall).
+    # (they fall through to the next provider in the waterfall). Rows that ALREADY have an
+    # email are never staged: PB bills per email found, and the write-back below skips them
+    # anyway, so sending them is paying twice for a value we discard.
     eligible = [r for r in rows
                 if str(r.get(cols["first"], "")).strip()
                 and str(r.get(cols["last"], "")).strip()
-                and clean_domain(r.get(cols["domain"], ""))]
+                and clean_domain(r.get(cols["domain"], ""))
+                and not str(r.get(args.email_col, "")).strip()]
     print(f"PB Email Finder: {len(eligible)}/{len(rows)} rows eligible "
           f"(have name + domain)")
     if not eligible:
@@ -397,11 +411,16 @@ def main():
         if not email:
             continue
         flag = email_domain_matches(email, r.get(cols["domain"], ""))
-        if flag == "mismatch" and not args.keep_mismatch:
+        if flag in ("mismatch", "other_tld") and not args.keep_mismatch:
             mismatch += 1
-            continue  # drop wrong-company email; fall through to next provider
+            continue  # wrong company (or another country's entity); next provider may do better
         r[args.email_col] = email
-        r[args.status_col] = flag or "unknown"
+        # PB returns NO deliverability grade (measured: 312 rows, no status/score/catch-all field),
+        # so the status column says exactly that. Writing the domain verdict here instead — the old
+        # behaviour — made sanitize.py drop every PB email, since "match" is not a deliverability
+        # status in EMAIL_POLICIES. The domain verdict goes to its own column.
+        r[args.status_col] = "UNGRADED"
+        r[args.domain_check_col] = flag or "unknown"
         r[args.source_col] = "phantombuster"
         found += 1
         if flag == "match":
@@ -432,7 +451,7 @@ def main():
 
 def _write_output(rows, args):
     fieldnames = list(rows[0].keys())
-    for c in (args.email_col, args.status_col, args.source_col):
+    for c in (args.email_col, args.status_col, args.source_col, args.domain_check_col):
         if c not in fieldnames:
             fieldnames.append(c)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)

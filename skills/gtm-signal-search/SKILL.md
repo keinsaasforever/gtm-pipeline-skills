@@ -76,7 +76,14 @@ This file is the heart of the prompt — it feeds the Parallel search objective,
 - Product launches that imply the underlying need
 - Vendor consolidation / SaaS-spend optimization
 
-*Exclude — what must NOT be treated as a signal.* End the file with a short **"Not a signal:"** block. Typical excludes:
+*Exclude — what must NOT be treated as a signal.* End the file with a short **"Not a signal:"** block.
+**Only the include half reaches the search query** (`objective_bullets()` cuts the file at the first
+"Not a signal" / "Exclude" line and drops markdown headings). That is deliberate: the exclude half
+normally names the seller's own product ("evidence they already use X"), and the H1 normally carries
+the client's name, so interpolating the whole file turned the seller into a search term — the
+Reduzer run got reduzer.com and the vendor's own aggregator profile back as "evidence" for small
+Norwegian contractors. The exclude half still reaches extraction and scoring. Keep the seller's name
+out of the include bullets for the same reason. Typical excludes:
 - Generic "we're growing" marketing copy or evergreen About-page text
 - News older than the lookback window
 - Developments unrelated to the offering
