@@ -2,7 +2,7 @@
 # run_demo.sh — headless entrypoint for the GTM demo skill.
 #
 # A thin, orchestrator-agnostic wrapper. A webhook layer (n8n, a small server, etc.) calls this
-# with the website form's prompt; it invokes /gtm-pipeline:demo via the Claude Code CLI (`claude -p`)
+# with the website form's prompt; it invokes /gtm-pipeline:demo-headless via the Claude Code CLI (`claude -p`)
 # and the skill writes {client-slug}-gtm/result.json. `claude -p` is the OUTER entrypoint, so the
 # agent does all LLM work itself — no nested `claude -p`, no third-party LLM on the default path.
 #
@@ -60,7 +60,7 @@ Headless demo run (no human in the loop). Rules:
   deck_path, csv_path, assumptions[], sanitize_report{}} and print its absolute path as the last line.
 EOF
 
-USER_PROMPT="/gtm-pipeline:demo ${PROMPT}"
+USER_PROMPT="/gtm-pipeline:demo-headless ${PROMPT}"
 [[ -n "$REQUESTER_EMAIL" ]] && USER_PROMPT="${USER_PROMPT}
 Requester email: ${REQUESTER_EMAIL}"
 USER_PROMPT="${USER_PROMPT}

@@ -1,12 +1,14 @@
 # Demo Deployment (headless webhook)
 
-Run the `/gtm-pipeline:demo` skill headless when a website form submits a prompt. The skills are
+Run the `/gtm-pipeline:demo-headless` skill when a website form submits a prompt. It is the
+unattended twin of `/gtm-pipeline:demo`: same steps, every decision pre-made, zero questions, and a
+hard budget (70 credits + $3). The skills are
 **orchestrator-agnostic** (README) — this is the thin runner your webhook layer calls. The website
 never talks to Claude directly; your integration layer (n8n, a small server, a queue worker) shells
 out to `run_demo.sh`.
 
 ```
-website form ──▶ your webhook layer ──▶ run_demo.sh ──▶ claude -p "/gtm-pipeline:demo …" ──▶ result.json
+website form ──▶ your webhook layer ──▶ run_demo.sh ──▶ claude -p "/gtm-pipeline:demo-headless …" ──▶ result.json
 ```
 
 ## Why `claude -p` here but not interactively
@@ -14,8 +16,8 @@ website form ──▶ your webhook layer ──▶ run_demo.sh ──▶ claude
 `claude -p` is the **outer entrypoint** for a headless run — the agent it starts does all the
 LLM work (extraction, scoring, filtering, messages) itself, exactly as in an interactive session.
 So there is **no nested `claude -p`** and no third-party LLM on the default path. Interactively you
-just run `/gtm-pipeline:demo` in the terminal; the same skill code runs. (See `conventions.md` →
-Model Routing.)
+just run `/gtm-pipeline:demo` in the terminal: it shares every step with the headless twin and only
+differs where a decision could be asked about. (See `conventions.md` → Model Routing.)
 
 ## Invocation
 

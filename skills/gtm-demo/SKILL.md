@@ -1,11 +1,16 @@
 ---
 name: gtm-pipeline:demo
-description: Generate a demo lead list of ~10 enriched contacts with personalized message examples. Use when a demo is requested, a webhook prompt describes a target audience, or someone asks to "create a demo for [client]". Enforces demo mode restrictions (email only, no phone, ~10 contacts). Chains people-search → contact-filter → people-enrichment → (optional signal-search) → message generation. Pass `--with-signals` (or ask the user) to enable a buying-intent scoring pass before message generation — pricier but produces sharper, signal-anchored messages.
+description: Generate a demo lead list of enriched contacts (10 per segment, 2 segments, 30 max) with personalized message examples. Use when a demo is requested interactively, someone asks to "create a demo for [client]", or a webhook prompt describes a target audience (for an unattended webhook run use gtm-demo-headless instead). Enforces demo mode restrictions (email only, no phone, 70-credit cap). Chains people-search → contact-filter → people-enrichment → (optional signal-search) → message generation. Pass `--with-signals` (or ask the user) to enable a buying-intent scoring pass before message generation — pricier but produces sharper, signal-anchored messages.
 ---
 
 # Demo
 
-Generate a demo lead list of ~10 enriched contacts with personalized message examples, triggered by a webhook prompt.
+Generate a demo lead list of enriched contacts with personalized message examples: **10 per segment,
+2 segments, 30 hard maximum, 70 credits hard**.
+
+This is the **interactive** variant: it may ask the user a clarifying question when a must-have is
+genuinely ambiguous, and the operator can override any default. For an **unattended webhook run use
+`gtm-demo-headless`**, which is the same pipeline with every decision pre-made and zero questions.
 
 **Read `~/.claude/skills/gtm-pipeline/_shared/conventions.md` before executing.**
 
@@ -15,15 +20,28 @@ Generate a demo lead list of ~10 enriched contacts with personalized message exa
 
 - Webhook trigger: user submits a free demo form describing their target audience
 - Goal: prove the AI agent writes authentic, non-generic outreach using real leads
-- Scope: ~10 contacts, enriched with LinkedIn + email, 2–4 message examples
+- Scope: 10 contacts per segment, enriched with LinkedIn + email, one message pair each
 
 ## Demo Restrictions
 
 - **No phone enrichment** — email only
-- **~10 contacts** (request 10–15, expect enrichment drop-off)
+- **Size: 10 contacts per segment, 2 segments by default** (split evenly), a third segment only if
+  the first two came back short and coverage is there. **30 contacts is the hard maximum**, and
+  **one contact per company** — a second contact at the same company only to fill a gap at the end.
+  A bigger number the requester asks for does not raise the cap; it raises what you say in the
+  hand-off ("this is a sample of a list we can extend").
 - Message generation is optional but recommended
 - **Signal search is opt-in** — off by default. Enable via `--with-signals` flag or explicit user request. See Step 5.5.
+- **Budget: 70 credits + $3 of web research per run, hard.** This covers everything: finder rows,
+  email enrichment, signal/web calls. Track the spend in `run_log.md` as you go (each provider
+  returns its own credit count — read it, don't estimate). **On reaching the cap the run stops
+  buying, ships what it already has, and logs the shortfall.** It never asks for more, and it never
+  buys "a few more rows to rank from".
 - **Cost gate:** before the first paid provider call, state the expected spend (finders bill per person returned — BetterContact 0.10, FullEnrich 0.25 — so ~15 people is 1.50 to 3.75 cr; ~10-15 email enrichment credits; signals <$0.50 if enabled; a screening pass multiplies the search by 1 ÷ pass rate, since discarded contacts are billed too). Interactive: confirm with the user first. Headless: log the estimate in `run_log.md` and proceed, never block.
+- **Pull enough, not best.** Buy `target ÷ expected pass rate` rows (≈1.5× with resolved filters),
+  then stop. Ranking a large pool down to a small list means paying for every discarded row: the
+  Reduzer run bought 311 rows to deliver 30. If the first pull is off-segment, fix the *filters*
+  and re-pull small; never widen the pull to compensate.
 
 ---
 
@@ -64,26 +82,122 @@ classification, and any headless assumptions).
 
 ---
 
+## Step 1b — Derive the Personas (before any paid call)
+
+**A prompt almost never names job titles.** "We sell LCA software to the construction industry in
+Norway and Sweden" says nothing about who signs. Deriving that is this step's job, not the search's:
+without it the search falls back to broad title guesses and buys a market-wide pool.
+
+Work it out from the client's own site (the pages scraped in Step 1 — customer/solution pages,
+case studies and quotes are the best source; a customer quote names the buyer's exact title) plus
+the offering:
+
+1. **Segments** — which buyer types the client sells to, in *their* words (reduzer.com: contractor,
+   architect, developer, consultant). Rank them by how prominently the site sells to each, and take
+   the **top 2** for the demo (Demo Restrictions). Record why the others were dropped.
+2. **Tier 1 titles per segment** — the role that owns the problem day to day and would answer the
+   message. Reference-check it: Reduzer's own quotes are from an "Environmental manager" at a
+   contractor and a "Sustainability Manager" at a developer, which *is* the tier-1 list.
+3. **Tier 2 titles** — the adjacent roles that own it when tier 1 does not exist (tender/estimating,
+   design/BIM, technical, project development), plus leadership at small companies.
+4. **Write them in the market's language, in the forms a title index actually stores.** Nordic and
+   German titles are compounds: `miljøleder`, `bærekraftssjef`, `hållbarhetschef`, `KMA-chef`,
+   `Nachhaltigkeitsmanager`. A token (`miljø`) does not match a compound in most indexes, so list
+   the full compound forms, and add the English equivalents international staff use.
+5. **Exclude tokens** — the look-alikes that waste rows: `student`, `praktikant`, `lærling`,
+   `assistent`, `trainee`, plus offering-specific ones (for building carbon: comms-only
+   sustainability roles, `ytre miljø` / soil-contamination roles, `social hållbarhet`).
+
+Write all of it to `context/icp.md` under `## Personas` (segments, tier 1, tier 2, excludes, and one
+line of evidence per tier-1 list). **No paid call before this block exists** — it is what makes the
+Step 3 filters narrow, and it is the difference between the emmy run (one query per company, 16
+candidates for 12 leads) and a market-wide pull.
+
+---
+
 ## Step 2 — Create Working Directory
 
 Create the `{client-slug}-gtm/` directory structure as defined in `conventions.md`. Write the ICP definition to `context/icp.md`.
 
 ---
 
-## Step 3 — People Search (10 contacts)
+## Step 3 — People Search (10 per segment)
 
-Use the **people-search** skill to find ~10–15 contacts.
+Use the **people-search** skill. Target = 10 per segment × the segments picked in Step 1b.
 
-**Provider selection for demo:** follow the finder cadence in `conventions.md` → People-Source
-Cadence — **FullEnrich Finder → BetterContact → Pipe0 → Amplemarket/Crustdata (last resort)**,
-max 2 attempts/source, FE-first for SME/owner-led/non-English segments. Both FE and BC return
-LinkedIn URLs directly (needed for email enrichment). If no company list (persona-based prompt),
-use **Parallel FindAll** or **BC Search**. For directory/scrape-sourced company lists, search by
-company **name** + location, never by exact domain (conventions #11).
+**Provider selection:** the general cadence is `conventions.md` → People-Source Cadence —
+**FullEnrich Finder → BetterContact → Pipe0 → Amplemarket/Crustdata (last resort)**, max 2 attempts
+per source, FE-first for SME / owner-led / non-English segments. **A demo inverts the first two:
+BetterContact leads here** (0.10/lead against FE's 0.25/person, and `limit_per_company: 1` is what
+spreads one fixed pull across distinct accounts, which a one-contact-per-company demo needs), with
+FullEnrich second for what BC's index misses and for the filters only it has. Outside a demo, or
+once several contacts per company are wanted, the general cadence applies unchanged. Both FE and BC
+return LinkedIn URLs directly (needed for email enrichment). If no company list and a persona search
+cannot bound the market, use the research route (3c) rather than **Parallel FindAll** / **BC
+Search**. For directory/scrape-sourced company lists, search by company **name** + location, never
+by exact domain (conventions #11).
+
+### 3a — Resolve the filters against each finder's own value list (free, do it first)
+
+The personas from Step 1b are filter *inputs*; every finder validates them against its own
+vocabulary, and **an off-list value silently matches nothing** — a 0-lead result then reads as "this
+market is empty" when it means "that word is not in the list".
+
+| What | BetterContact | FullEnrich | Pipe0 |
+|---|---|---|---|
+| Industry | 120 Landbase values, **case-sensitive**, `company_industry` | LinkedIn industries, `_shared/fe_industries.txt` (490, case-insensitive) | catalog `industries.json` (435/501) |
+| Region | country / "City, Country" | country / region string | `regions.json`, resolved or dropped |
+| Headcount | `company_headcount_min/_max` integers | `current_company_headcounts` {min,max} | bracket enums |
+| Titles | `lead_job_title` (contains), `lead_seniority`, `lead_department` | `current_position_titles`, `seniority` | per-search keys |
+| Per-company cap | **`limit_per_company`** | none (persona pulls cluster) | none |
+
+Grep the lists, never type a value from memory (`grep -i "construction" _shared/fe_industries.txt`;
+BetterContact's is at https://doc.bettercontact.rocks/api-reference/taxonomies). Write the resolved
+values into `context/icp.md` next to the personas.
+
+**If no industry value fits the request, or the resolved filters come back slim or off-segment
+(<½ the target, or most rows in the wrong segment), stop filtering and switch to broad research**
+(3c). Two probe queries decide this — don't spend a third.
+
+### 3b — Default route: filtered people search
+
+**BetterContact first** (0.10/lead, cheapest per row, and `limit_per_company: 1` is what spreads a
+fixed pull across distinct accounts, which a one-contact-per-company demo needs), **FullEnrich
+second** for what BC's index misses (SME / owner-led / non-English segments) and for filters only it
+has (tenure, recent job change). Max 2 attempts each, then fall through. Both return LinkedIn URLs,
+which Step 5 needs.
+
+Pull `target ÷ expected pass rate` (≈1.5×), per segment, and stop at the target. Re-verify titles
+and segment locally — every provider filter is advisory.
+
+### 3c — Broad research route (when 3a says the filters don't fit)
+
+This is the emmy/nextbike route, and it is cheap because the company list is free:
+1. Enumerate a **finite company pool** from public sources: an industry ranking, a trade-association
+   member list, a public register, a directory, a Wikipedia list, or a client-supplied CSV. Cap it
+   at ~2× the target companies. Verify each domain.
+2. Then one people search **per company** (`limit` 5–8, tier-1 titles, no person-location filter),
+   and pick one contact per company.
+   Precedent: emmy 18 named brands → 16 candidates → 12 delivered; nextbike 21 clinics from a public
+   hospital list → 47 candidates → 18 delivered.
 
 **Route before searching** (`conventions.md` → Search Routing). Write the requirement split to
-`context/icp.md`. A demo wants one contact per company, so **people first is always the cheaper
-route here** — the companies come out of the people search for free.
+`context/icp.md`. A demo wants one contact per company, so **people first is the cheaper route
+whenever the universe is bounded by filters** — the companies come out of the people search for
+free. When the filters cannot bound it, 3c bounds it instead.
+
+- **Pick the finder by the filters the ICP needs** (funding, hiring, revenue, B2B/B2C →
+  BetterContact; tenure or a recent job change → FullEnrich). A filter beats research.
+- **Any requirement that needs judgement** (a signal, a website trait, revenue from filings) is
+  screened **after** the people search, on the companies it returned: pull `target ÷ expected pass
+  rate` contacts, screen, drop the ones whose company fails. **Screen before Step 5** so email
+  credits are only spent on survivors.
+- **Company search first only** when the demo is meant to show the account list itself, or the
+  prompt already comes with a company list. (3c is a different trigger: there the filters cannot
+  express the segment at all, so the pool is enumerated from free public sources.)
+- **Signal search first only** when a signal is mandatory *and* is the only way in (no filter
+  covers it). Then: signal discovery → companies → people at those companies. A signal used to
+  *rank* or to *hook* companies we already picked runs after the search, in Step 5.5.
 
 - **Pick the finder by the filters the ICP needs** (funding, hiring, revenue, B2B/B2C →
   BetterContact; tenure or a recent job change → FullEnrich). A filter beats research.
@@ -109,7 +223,7 @@ Follow the people-search execution protocol: sandbox → test → review → run
 
 ## Step 4 — Contact Filter (ICP Ranking)
 
-Run **contact-filter** on the 10–15 contacts found. Even small batches benefit from ICP ranking — it ensures the enrichment step focuses on the best-fit contacts.
+Run **contact-filter** on the contacts found. Even small batches benefit from ICP ranking — it ensures the enrichment step focuses on the best-fit contacts, and it is where the Step 1b exclude tokens are enforced (provider title filters are advisory).
 
 - Applies job tier, industry tier, location tier, and company size classification
 - Rejects hard non-ICP contacts
@@ -382,7 +496,7 @@ email to a file; never send on the user's behalf without explicit go-ahead (`con
 
 ## Trigger Context
 
-**Webhook (demo form):** Free demo trigger — user describes their ICP in a text prompt. Run this skill with ~10 contacts and 2–4 message samples. See Deployment.
+**Webhook (demo form):** Free demo trigger — user describes their ICP in a text prompt. An unattended webhook runs **gtm-demo-headless** (same steps, zero questions, fixed defaults). See Deployment.
 
 **Stripe payment (full list):** After successful payment, run the full pipeline via the `pipeline` skill. See pipeline skill for orchestration.
 
@@ -390,32 +504,19 @@ email to a file; never send on the user's behalf without explicit go-ahead (`con
 
 ## Deployment (headless webhook)
 
-When a website form submits a prompt (ICP/signals), the demo runs **headless** via the Claude
-Code CLI. The skill is orchestrator-agnostic; a thin runner is provided at
-`~/.claude/skills/gtm-pipeline/_shared/deploy/run_demo.sh` (see `_shared/deploy/README.md` for the full contract).
+When a website form submits a prompt, the run is unattended and belongs to **`gtm-demo-headless`**
+(`~/.claude/skills/gtm-demo-headless/SKILL.md`): same steps as this skill, every decision pre-made,
+zero questions, `result.json` as the output contract. A thin runner is provided at
+`~/.claude/skills/gtm-pipeline/_shared/deploy/run_demo.sh` (see `_shared/deploy/README.md`).
 
-**Invocation:**
 ```bash
-claude -p "/gtm-pipeline:demo $PROMPT" --model sonnet --permission-mode acceptEdits \
-  --append-system-prompt "Headless demo run: never ask questions; infer per Step 1, record
-  assumptions in context/icp.md, run end-to-end, sanitize, and emit result.json."
+claude -p "/gtm-pipeline:demo-headless $PROMPT" --model sonnet --permission-mode acceptEdits
 ```
 
-**Input contract:** free-text prompt describing the offering + target audience; the requester's
-email (domain auto-resolved per Step 1). Optional JSON: `{ "prompt", "requester_email",
-"with_signals": bool, "max_contacts": 10 }`.
-
-**Output contract:** the run writes `{client-slug}-gtm/result.json`:
-```json
-{ "status": "ok", "client_slug": "...", "contacts": 10, "with_signals": true,
-  "deck_path": "csv/output/… .html", "csv_path": "csv/output/contacts_enriched.csv",
-  "assumptions": ["…"], "sanitize_report": { "...": 0 } }
-```
-
-**Headless rules:** never block on questions (Step 1); model routing per `conventions.md`
-(Sonnet orchestration/filtering/deck, Opus extraction/scoring/messages — signal-search runs
-`--llm-backend agent`, so the headless agent scores in-context, **no nested `claude -p`**);
-always run Step 7a sanitization; delivery stays gated (produce the deck/email, do not send).
+Use **this** skill when a person is present to answer: it may ask one clarifying question, and the
+operator can override the defaults. Use the headless skill for webhooks, cron and any `claude -p`
+run with nobody watching. Keep step logic in this file; the headless skill only overrides decision
+points, so fixes here reach both.
 
 ---
 

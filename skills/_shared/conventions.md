@@ -192,6 +192,20 @@ Company-first only wins when **`k > c_co / (c_p·(1-p))`**:
 
 People-first also never pays for a company whose people the index doesn't carry.
 
+**The math above assumes a bounded universe.** It compares prices per kept contact; it does not say
+how many rows you buy. A people search against an unbounded ICP ("contractors in Norway and Sweden")
+is a market-wide pull billed per row, and the filtering happens after you have paid. Bound the
+universe *before* the first paid search, in this order:
+1. **Filters bound it** — industry + HQ country + headcount + titles resolved against each finder's
+   own value list. This is the normal case and costs nothing extra.
+2. **No value list fits, or the filtered pull comes back slim or off-segment** → bound it by
+   enumerating companies instead: a public ranking, a directory, an association member list, a
+   client CSV (free), then one people search per company. This is how the emmy (18 named brands)
+   and nextbike (21 clinics from a public hospital list) runs stayed at a 1.3:1 and 2.6:1
+   pulled-to-delivered ratio.
+Cost of ignoring it (Reduzer, 2026-09-17): an unbounded two-country persona pull bought 311 rows to
+deliver 30, a 10:1 ratio, and 59.5 of the run's credits went to rows that were filtered away.
+
 Routes:
 
 1. **Default — people first, screen after.** Search people with the company filters, take the
@@ -260,8 +274,11 @@ fall through:
 1. **FullEnrich Finder** (0.25 credits per person returned; re-exports free) — lead for SME / owner-led / non-English-market
    segments (FE indexes these better than BC). Run union queries (title tokens, full titles,
    name-only), dedupe by LinkedIn URL, filter locally.
-2. **BetterContact Lead Finder** (0.10 credits per lead returned — the cheapest finder per row) —
-   for broader / English-market / larger-company segments.
+2. **BetterContact Lead Finder** (0.10 credits per lead returned — the cheapest finder per row;
+   4 searches returning 74 leads on 2026-09-17 billed **0.0**, `credits_consumed` and the account
+   balance both unchanged, so treat 0.10 as the ceiling and read `credits_consumed` per run) —
+   for broader / English-market / larger-company segments, and **first in a demo**, where its
+   `limit_per_company` is what spreads a fixed pull across distinct accounts.
 3. **Pipe0 searches** — last-resort finder when FE+BC return 0 relevant candidates for a company
    (keyed on the real domain, it recovers companies the others miss). Order within Pipe0:
    `amplemarket@2` (3.00 flat for up to 100 rows) → `crustdata@3` (0.15/result, 3.75 worst case at
