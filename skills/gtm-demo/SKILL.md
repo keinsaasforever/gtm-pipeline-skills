@@ -23,7 +23,7 @@ Generate a demo lead list of ~10 enriched contacts with personalized message exa
 - **~10 contacts** (request 10–15, expect enrichment drop-off)
 - Message generation is optional but recommended
 - **Signal search is opt-in** — off by default. Enable via `--with-signals` flag or explicit user request. See Step 5.5.
-- **Cost gate:** before the first paid provider call, state the expected spend (finder searches per People-Source Cadence are mostly free; ~10-15 email enrichment credits; signals <$0.50 if enabled). Interactive: confirm with the user first. Headless: log the estimate in `run_log.md` and proceed, never block.
+- **Cost gate:** before the first paid provider call, state the expected spend (finders bill per person returned — BetterContact 0.10, FullEnrich 0.25 — so ~15 people is 1.50 to 3.75 cr; ~10-15 email enrichment credits; signals <$0.50 if enabled; a screening pass multiplies the search by 1 ÷ pass rate, since discarded contacts are billed too). Interactive: confirm with the user first. Headless: log the estimate in `run_log.md` and proceed, never block.
 
 ---
 
@@ -81,6 +81,21 @@ LinkedIn URLs directly (needed for email enrichment). If no company list (person
 use **Parallel FindAll** or **BC Search**. For directory/scrape-sourced company lists, search by
 company **name** + location, never by exact domain (conventions #11).
 
+**Route before searching** (`conventions.md` → Search Routing). Write the requirement split to
+`context/icp.md`. A demo wants one contact per company, so **people first is always the cheaper
+route here** — the companies come out of the people search for free.
+
+- **Pick the finder by the filters the ICP needs** (funding, hiring, revenue, B2B/B2C →
+  BetterContact; tenure or a recent job change → FullEnrich). A filter beats research.
+- **Any requirement that needs judgement** (a signal, a website trait, revenue from filings) is
+  screened **after** the people search, on the companies it returned: pull `10 ÷ expected pass rate`
+  contacts, screen, drop the ones whose company fails. Screen before Step 5 so email credits are
+  only spent on survivors.
+- **Company search first only** when the demo is meant to show the account list itself, or the
+  prompt already comes with a company list.
+- **Signal search first only** when a signal is mandatory *and* is the only way in (no filter
+  covers it). Then: signal discovery → companies → people at those companies.
+
 **Key fields to collect:**
 ```
 full_name, first_name, last_name,
@@ -131,6 +146,10 @@ headline (optional), summary (optional), recent_posts (optional)
 ---
 
 ## Step 5.5 — Signal Search (Optional)
+
+**If signals gate this run** (per Step 3 routing), run this step **before Step 5**, on the companies
+the people search returned, and enrich only the contacts whose company keeps a signal. As a message
+hook (the default when it's on), it stays here, after enrichment.
 
 **Default: OFF.** Enable when:
 - The user explicitly asks for signal-anchored messages
@@ -301,8 +320,10 @@ result to `csv/output/`.
      "on request" when no email — in that case **drop the email draft, keep only the LinkedIn
      draft**), and the message draft (email subject + body, then LinkedIn) with an A/B `cta-chip`.
    - **List bar** carries a **Download-CSV button** (`.dl`) beside the Expand-all toggle; the
-     footer carries a **big CTA button** (`.cta-btn`) linking to the client's booking URL
-     (`{{CALENDAR_URL}}` — ask for it, or leave the token if unknown). These two elements are the
+     footer carries a **big CTA button** (`.cta-btn`) linking to **keinsaas's** booking page, always
+     (the deck is a keinsaas pitch to the prospect, never the prospect's own demo link):
+     `{{CALENDAR_URL}}` = https://calendar.google.com/calendar/appointments/schedules/AcZssZ3kHmy2kw6fePg6tqmkoaFnj8AKGN2Baq3rRyfo4ItozAv2BfXF3Gh2-oMjYDxWIc7P_hEfMZTi
+     (the schedule embedded on keinsaas.com/sales-agent; re-check there if it 404s). These two elements are the
      grafted-in pieces; the rest is the standard combined-deck look.
    - **`{{CSV_DATA}}`**: embed the sanitized `csv/output/` rows as an escaped JS string (`\r\n`
      line endings; quote any field containing a comma) so the Download button emits a real CSV

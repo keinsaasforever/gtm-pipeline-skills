@@ -37,22 +37,43 @@ Ask: **What data does the user have?**
 
 ## Step 2 — Determine Workflow
 
+**Route first** (`conventions.md` → Search Routing): split the ICP into filter and score
+requirements, record the split in `context/icp.md`, and note that a people search already returns
+the companies, so a scoring requirement alone does not justify buying companies first.
+- **Default, people first:** **Persona prospecting** shortcut — people-search with company filters
+  on the finder that has them, then score/screen the companies that came back and drop the contacts
+  whose company fails. Cheapest at one contact per company.
+- **Company-First** when you need **≥2 contacts per company** (see the cost rule), when the account
+  list is a deliverable or a gate the client reviews, or when discovery is company-shaped anyway
+  (client CSV, directory, Sales Navigator, FindAll).
+- **Signal-First** only when the signal *is* the way to find companies: mandatory, and no finder
+  filter covers it (funding and hiring are filters, so they are not Signal-First).
+
 ### Company-First Workflow (Finite Markets)
 
 **When:** Client provides a company list, known industry, or uses Sales Navigator. The market is bounded — you know (or can enumerate) the target companies.
 
 **Full sequence:**
 ```
-1. Company Search      → csv/input/companies_raw.csv
+1. Company Search      → csv/input/companies_raw.csv           (default: FullEnrich Company Search)
 2. Company Enrichment  → csv/intermediate/companies_enriched.csv
 3. ICP Scoring         → csv/intermediate/companies_scored.csv  (credit-saving gate: icp_score >= 70)
 4. Signal Search       → csv/intermediate/signals.csv  (runs on gated set; doesn't read icp_score)
-5. People Search       → csv/intermediate/contacts_found.csv
+5. People Search       → csv/intermediate/contacts_found.csv   (FE companies: keyed on fe_company_id)
 6. Contact Filter      → csv/intermediate/contacts_filtered.csv
 7. People Enrichment   → csv/output/contacts_enriched.csv
 ```
 
 The `icp_score >= 70` gate at step 3 is **for credit savings only** — signal-search itself doesn't depend on the ICP score. Skip the gate if you want to score signals on the full enriched set.
+
+**With FullEnrich as the company source** (company-search → FullEnrich, `_shared/fe_search.py`):
+- **Step 2 shrinks.** FE already returns industry, headcount, HQ, company type, founded year,
+  description, specialties and technologies. Enrich only what the ICP needs beyond those (e.g.
+  web traffic, on-site content).
+- **Step 5 runs on the gated set only**, via `fe_search.py people --companies <gated csv>`. People
+  cost 0.25 cr each, so searching every company step 1 returned wastes the gate.
+- Cost lines for the estimate: step 1 = `--max` × 0.25, step 5 = gated companies × `--per-company`
+  × 0.25. Both are ceilings, printed by `--dry-run`.
 
 ### Signal-First Workflow (Infinite Markets)
 
@@ -243,8 +264,10 @@ IF user has company list:
   → company-enrichment → (optional: signal-search) → people-search → contact-filter → people-enrichment
 
 IF user has nothing (just ICP):
-  → Ask: Company-First or Signal-First?
-  → Company-First: company-search → company-enrichment → signal-search → people-search → contact-filter → people-enrichment
+  → Search Routing (conventions.md), recorded in context/icp.md
+  → Default (1 contact/company): people-search with company filters → screen the companies it
+      returned (signal/score/research) → contact-filter → people-enrichment
+  → ≥2 contacts/company, or the account list is a deliverable — Company-First: company-search → company-enrichment → signal-search → people-search → contact-filter → people-enrichment
   → Signal-First: signal-search (discovery) → company-enrichment → people-search → contact-filter → people-enrichment
 
 IF paid trigger (e.g. Stripe webhook):

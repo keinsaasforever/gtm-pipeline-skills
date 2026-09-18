@@ -1,6 +1,6 @@
 ---
 name: gtm-pipeline:company-search
-description: Build a list of companies matching ICP criteria. Use when a client needs a company list — no existing list, wants to expand, or signal-based discovery needs enrichment. Providers: Sales Navigator + PhantomBuster, Parallel FindAll, Firecrawl Agent, Pipe0 Amplemarket, BC/FE byproduct, web scraping. Also triggers on "build company list", "find companies", "company search".
+description: Build a list of companies matching ICP criteria. Use when a client needs a company list — no existing list, wants to expand, or signal-based discovery needs enrichment. Providers: FullEnrich Company Search (default for firmographic filters), Sales Navigator + PhantomBuster, Parallel FindAll, Firecrawl Agent, Pipe0 Amplemarket, BC/FE byproduct, web scraping. Also triggers on "build company list", "find companies", "company search".
 ---
 
 # Company Search
@@ -28,7 +28,77 @@ Build a list of companies matching ICP criteria. Returns a CSV with domains and 
 
 ## Provider Selection
 
-**Ask the user which provider to use.**
+**First, check you need a company list at all** (`conventions.md` → Search Routing). A people search
+takes company filters directly **and returns the companies for free**, so buying companies first
+pays off only when you need **≥2 contacts per company**, when the account list is itself a
+deliverable or a gate the client reviews, or when discovery is company-shaped anyway (client CSV,
+directory, Sales Navigator, FindAll). A requirement that needs research or scoring is **not** a
+reason on its own: screen the companies the people search returned instead.
+
+**Default: FullEnrich Company Search** whenever the ICP can be written as filters (industry,
+headcount, HQ location, company type, founded year, specialties, technologies, description
+keywords). FullEnrich has no funding, hiring or revenue filter. BetterContact and Amplemarket do,
+on the people search, which usually means no company step at all (see the matrix). Use
+Parallel FindAll or Firecrawl Agent for behaviour no filter anywhere expresses (a project, a
+campaign, press), or when FE returns too few relevant companies after 2 attempts.
+
+### From FullEnrich Company Search (default)
+
+**Endpoint:** `POST https://app.fullenrich.com/api/v2/company/search`, synchronous
+**Auth:** `Authorization: Bearer $FULLENRICH_API_KEY`, called with curl (Cloudflare, conventions #8)
+**Cost:** **0.25 credits per company returned.** A company the workspace already exported is free
+to fetch again. Zero results cost nothing. The row cap is therefore the cost ceiling.
+**Docs:** https://docs.fullenrich.com/api/v2/company/search/post
+
+**Run it through `_shared/fe_search.py`, never hand-rolled curl.** The script validates filter
+keys and enum values offline, owns pagination, maps `0` (FE's "unknown" for headcount and founded
+year) to blank, keeps FE's company `id` as `fe_company_id` for the people step, and writes the raw
+response to `csv/intermediate/fe_company_search_raw.json`.
+
+```bash
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+  export $(grep -E '^FULLENRICH_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+  python3 ~/.claude/skills/gtm-pipeline/_shared/fe_search.py companies \
+    --client-dir {client-slug}-gtm --filters {client-slug}-gtm/context/fe_company_filters.json \
+    --max 40 --dry-run        # drop --dry-run once the printed request + ceiling look right
+```
+
+`fe_company_filters.json` is the request body without `limit`/`offset`/`search_after`:
+
+```json
+{
+  "industries": [{"value": "Telephone Call Centers"}, {"value": "Outsourcing and Offshoring Consulting"}],
+  "headquarters_locations": [{"value": "Germany"}, {"value": "Austria"}, {"value": "Switzerland"}],
+  "headcounts": [{"min": 50, "max": 1000}],
+  "keywords": [{"value": "customer service outsourcing"}],
+  "domains": [{"value": "competitor.de", "exclude": true}]
+}
+```
+
+| Filter | Shape | Notes |
+|---|---|---|
+| `industries` | `{value}` | LinkedIn industry names, **exact list in `_shared/fe_industries.txt`** (script rejects anything else). "Call centers" is `Telephone Call Centers`. |
+| `headquarters_locations` | `{value}` | Continent / country **in English** / region + city **in the local language** (`Bayern`, `München`). "DACH" is not a value: list the three countries. |
+| `headcounts`, `founded_years` | `{min, max}` | Inclusive ranges. |
+| `keywords` | `{value}` | Matches the company **description**. The only filter People Search doesn't have, and the sharpest one for niche ICPs. Fuzzy by default, so test it small. |
+| `specialties`, `technologies` | `{value}` | Self-declared specialties and detected tech stack (`HubSpot`, `Shopify`). |
+| `types` | `{value}` | `Privately Held`, `Public Company`, `Self-Owned`, `Self-Employed`, `Partnership`, `Nonprofit`, `Educational`, `Government Agency`. |
+| `names`, `domains`, `professional_network_urls`, `company_ids` | `{value}` | Exact lookups. With `exclude: true`, they drop existing customers or companies already contacted. |
+
+- **Logic:** values inside one filter are OR, and different filters are AND (FE's
+  *Filtering Logic Explained* page). Every string item takes `exact_match` (default `false`, fuzzy)
+  and `exclude` (default `false`).
+- **Not in the API:** revenue, funding, hiring and follower count show as "soon" in the FE UI.
+  Don't plan a search around them.
+- **Size before you pull:** the script prints `metadata.total` (all matches in the index). Run
+  `--max 10` first (≤ 2.5 credits). If `total` is in the tens of thousands, the filters are too
+  loose; tighten them before raising `--max`.
+- **Re-verify locally:** check HQ country, headcount and industry on the returned rows before
+  handing them on (filters narrow the search; they are not a guarantee).
+- **Unverified until the first live call:** whether FE rejects or silently ignores an unknown
+  filter key or an off-list value. The script refuses both, so don't bypass it.
+- `logo_url` points at a fullenrich.com host. Never put it in a client deck (the deck names no
+  provider). Use the domain favicon as the deck template does.
 
 ### From Sales Navigator (most comprehensive B2B data)
 
@@ -208,9 +278,11 @@ Before searching, ensure these are defined:
 - Exclusions (e.g. no software companies)
 
 ### 2. Select Provider
-Present options to user with estimated costs. Get approval.
+FullEnrich Company Search when the ICP fits its filters (see Provider Selection). Otherwise
+present the options with estimated costs and get approval.
 
 ### 3. Test Run
+- For FullEnrich: `--dry-run` first (free), then `--max 10`, then read `metadata.total` and the rows
 - For FindAll: start with `match_limit: 10`, review results
 - For SN+PB: export 10–20 companies, verify data quality
 - For Firecrawl Agent: test with a small prompt
@@ -236,6 +308,14 @@ company_industry, company_hq_location, company_hq_country,
 company_employee_count, company_employee_range,
 source
 ```
+
+Additional fields from FullEnrich (`fe_search.py companies`):
+```
+company_website, company_type, year_founded, company_description,
+company_specialities, company_technologies, fe_company_id
+```
+`fe_company_id` is what `fe_search.py people` joins on. Keep it in every downstream CSV
+(sanitize strips `fe_*` from the lead-facing output).
 
 Additional fields from SN (if available):
 ```

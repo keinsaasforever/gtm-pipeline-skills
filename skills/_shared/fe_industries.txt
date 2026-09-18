@@ -1,0 +1,490 @@
+Import & Export
+Think Tanks
+Environmental Services
+Architecture and Planning
+Staffing and Recruiting
+Legal Services
+IT Services and IT Consulting
+Insurance
+Non-profit Organizations
+Venture Capital and Private Equity Principals
+Home Health Care Services
+Primary and Secondary Education
+Software Development
+Research Services
+Law Practice
+Real Estate
+Individual and Family Services
+Mental Health Care
+Real Estate Agents and Brokers
+Health and Human Services
+Hospitality
+Farming
+Fundraising
+Accounting
+Medical Device
+Beverage Manufacturing
+Wellness and Fitness Services
+Hospitals and Health Care
+Marketing Services
+Financial Services
+Outsourcing and Offshoring Consulting
+Chemical Manufacturing
+Executive Offices
+Advertising Services
+Transportation, Logistics, Supply Chain and Storage
+E-Learning Providers
+Travel Arrangements
+Education Management
+Industry Associations
+Information Technology & Services
+Writing and Editing
+Public Safety
+Media Production
+Business Consulting and Services
+Oil and Gas
+Railroad Equipment Manufacturing
+Oil, Gas, and Mining
+Strategic Management Services
+Technology, Information and Internet
+Landscaping Services
+Wholesale Building Materials
+Sporting Goods Manufacturing
+Motor Vehicle Manufacturing
+Security and Investigations
+Civic and Social Organizations
+Apparel Manufacturing
+Construction
+Biotechnology Research
+Spectator Sports
+Farming, Ranching, Forestry
+Housing and Community Development
+Veterinary Services
+Consumer Services
+Utilities
+Engineering Services
+Professional Training and Coaching
+Blogs
+Performing Arts
+Technology, Information and Media
+Human Resources Services
+Higher Education
+Outsourcing/Offshoring
+Wholesale
+Building Construction
+Industrial Machinery Manufacturing
+Government Administration
+Newspaper Publishing
+Public Policy Offices
+Facilities Services
+Food and Beverage Services
+Automation Machinery Manufacturing
+Research
+Manufacturing
+Health, Wellness & Fitness
+Broadcast Media Production and Distribution
+Data Infrastructure and Analytics
+Retail Furniture and Home Furnishings
+Leisure, Travel & Tourism
+Medical Practices
+Machinery Manufacturing
+Retail Apparel and Fashion
+Medical Equipment Manufacturing
+Musicians
+Non-profit Organization Management
+Graphic Design
+Investment Management
+Retail
+Computer and Network Security
+Repair and Maintenance
+Education
+Automotive
+Translation and Localization
+Consumer Goods
+Photography
+Information Services
+Apparel & Fashion
+Truck Transportation
+Public Relations and Communications Services
+Education Administration Programs
+Design Services
+Pharmaceutical Manufacturing
+Wholesale Import and Export
+Restaurants
+Animation and Post-production
+Textile Manufacturing
+Transportation/Trucking/Railroad
+Freight and Package Transportation
+Food & Beverages
+Law Enforcement
+Shipbuilding
+Computers and Electronics Manufacturing
+Design
+Glass, Ceramics and Concrete Manufacturing
+Artists and Writers
+Paper and Forest Product Manufacturing
+Capital Markets
+Mining
+Printing Services
+Furniture and Home Furnishings Manufacturing
+Book and Periodical Publishing
+Personal Care Product Manufacturing
+Religious Institutions
+Business Intelligence Platforms
+Market Research
+Public Health
+International Trade and Development
+Appliances, Electrical, and Electronics Manufacturing
+Banking
+Movies, Videos, and Sound
+Renewable Energy Semiconductor Manufacturing
+Retail Luxury Goods and Jewelry
+Food and Beverage Manufacturing
+Telecommunications
+Food Production
+Mechanical Or Industrial Engineering
+Language Schools
+Services for Renewable Energy
+Human Resources
+International Affairs
+Sports Teams and Clubs
+Ranching
+Entertainment Providers
+Holding Companies
+Retail Art Supplies
+Civil Engineering
+Interior Design
+Political Organizations
+Events Services
+Chiropractors
+Fisheries
+Forestry and Logging
+Recreational Facilities
+Solar Electric Power Generation
+Plastics Manufacturing
+Internet News
+Sports and Recreation Instruction
+Tobacco Manufacturing
+Wholesale Paper Products
+IT System Custom Software Development
+Leasing Residential Real Estate
+Computer Hardware Manufacturing
+Blockchain Services
+Online Audio and Video Media
+Museums, Historical Sites, and Zoos
+Airlines and Aviation
+Industrial Automation
+Veterinary
+Cosmetics
+Retail Office Equipment
+Leasing Non-residential Real Estate
+Entertainment
+Wholesale Chemical and Allied Products
+Embedded Software Products
+Social Networking Platforms
+Investment Banking
+Equipment Rental Services
+Defense and Space Manufacturing
+Bars, Taverns, and Nightclubs
+Retail Motor Vehicles
+Media and Telecommunications
+Wholesale Raw Farm Products
+Operations Consulting
+Sightseeing Transportation
+Dairy Product Manufacturing
+Renewable Energy Power Generation
+Computer Networking Products
+Administration of Justice
+Janitorial Services
+Alternative Medicine
+Historical Sites
+Building Materials
+Warehousing and Storage
+Online and Mail Order Retail
+Business Content
+Music
+Maritime Transportation
+Professional Organizations
+Engines and Power Transmission Equipment Manufacturing
+Philanthropic Fundraising Services
+Agriculture, Construction, Mining Machinery Manufacturing
+Packaging & Containers
+Nursing Homes and Residential Care Facilities
+Fabricated Metal Products
+Retail Groceries
+Wood Product Manufacturing
+Retail Office Supplies and Gifts
+Retail Health and Personal Care Products
+Computer Hardware
+Dentists
+Internet Marketplace Platforms
+Furniture
+Aviation and Aerospace Component Manufacturing
+Motor Vehicle Parts Manufacturing
+Semiconductor Manufacturing
+Nanotechnology Research
+Renewables & Environment
+IT System Data Services
+Packaging and Containers Manufacturing
+Government Relations Services
+Insurance Agencies and Brokerages
+Computer Games
+Paper & Forest Products
+E-learning
+Community Services
+Space Research and Technology
+Business Supplies & Equipment
+Aviation & Aerospace
+Commercial Real Estate
+Metalworking Machinery Manufacturing
+Food and Beverage Retail
+Digital Accessibility Services
+Baked Goods Manufacturing
+Armed Forces
+Wine & Spirits
+Pet Services
+Specialty Trade Contractors
+Wholesale Appliances, Electrical, and Electronics
+Physical, Occupational and Speech Therapists
+Alternative Dispute Resolution
+Consumer Electronics
+Arts & Crafts
+Wholesale Computer Equipment
+Robotics Engineering
+Gambling Facilities and Casinos
+Community Development and Urban Planning
+Measuring and Control Instrument Manufacturing
+Personal Care Services
+Mobile Food Services
+Golf Courses and Country Clubs
+Luxury Goods & Jewelry
+Biotechnology
+Ground Passenger Transportation
+Wireless Services
+Internet Publishing
+Defense & Space
+Electrical Equipment Manufacturing
+Mobile Computing Software Products
+Building Finishing Contractors
+Museums
+Program Development
+Paint, Coating, and Adhesive Manufacturing
+Investment Advice
+Building Equipment Contractors
+Wholesale Luxury Goods and Jewelry
+Telephone Call Centers
+Boilers, Tanks, and Shipping Container Manufacturing
+IT System Design Services
+Online Media
+Fine Arts Schools
+Household Services
+Professional Services
+Air, Water, and Waste Program Management
+Environmental Quality Programs
+Commercial and Industrial Machinery Maintenance
+Retail Building Materials and Garden Equipment
+Architectural and Structural Metal Manufacturing
+Desktop Computing Software Products
+Primary Metal Manufacturing
+Technical and Vocational Training
+Glass Product Manufacturing
+Electric Power Transmission, Control, and Distribution
+Wholesale Metals and Minerals
+Wholesale Food and Beverage
+Administrative and Support Services
+Fire Protection
+Security Systems Services
+Libraries
+Electronic and Precision Equipment Maintenance
+Vehicle Repair and Maintenance
+Maritime
+Semiconductors
+Electric Lighting Equipment Manufacturing
+Executive Search Services
+HVAC and Refrigeration Equipment Manufacturing
+Real Estate and Equipment Rental Services
+Sound Recording
+Animation
+Security Guards and Patrol Services
+Fine Art
+Wholesale Machinery
+Dance Companies
+Sporting Goods
+Waste Collection
+Mattress and Blinds Manufacturing
+Child Day Care Services
+Electric Power Generation
+Hospitals
+Rail Transportation
+Nuclear Electric Power Generation
+Residential Building Construction
+Women's Handbag Manufacturing
+Taxi and Limousine Services
+Housing Programs
+Breweries
+Audio and Video Equipment Manufacturing
+Renewable Energy Equipment Manufacturing
+Building Structure and Exterior Contractors
+Warehousing
+Movies and Sound Recording
+Meat Products Manufacturing
+Wholesale Motor Vehicles and Parts
+Sheet Music Publishing
+Retail Books and Printed News
+Amusement Parks and Arcades
+Computer Networking
+Public Policy
+Hotels and Motels
+Data Security Software Products
+Retail Appliances, Electrical, and Electronic Equipment
+Biomass Electric Power Generation
+Laundry and Drycleaning Services
+Communications Equipment Manufacturing
+Mobile Gaming Apps
+Dairy
+Subdivision of Land
+Water, Waste, Steam, and Air Conditioning Services
+Collection Agencies
+Accessible Architecture and Design
+Animal Feed Manufacturing
+Retail Art Dealers
+Coal Mining
+Conservation Programs
+Cosmetology and Barber Schools
+Wholesale Alcoholic Beverages
+Accommodation and Food Services
+Wholesale Drugs and Sundries
+Loan Brokers
+Vocational Rehabilitation Services
+Office Administration
+Waste Treatment and Disposal
+Agricultural Chemical Manufacturing
+Transportation Programs
+Book Publishing
+IT System Operations and Maintenance
+Rubber Products Manufacturing
+Periodical Publishing
+Trusts and Estates
+Accessible Hardware Manufacturing
+Horticulture
+Footwear Manufacturing
+Fashion Accessories Manufacturing
+Commercial and Service Industry Machinery Manufacturing
+Metal Treatments
+Climate Technology Product Manufacturing
+Surveying and Mapping Services
+Wholesale Hardware, Plumbing, Heating Equipment
+Caterers
+Outpatient Care Centers
+Commercial and Industrial Equipment Rental
+Retail Pharmacies
+Wholesale Apparel and Sewing Supplies
+Philanthropy
+Services for the Elderly and Disabled
+Robot Manufacturing
+Water Supply and Irrigation Systems
+Soap and Cleaning Product Manufacturing
+Retail Florists
+Household and Institutional Furniture Manufacturing
+Leather Product Manufacturing
+Theater Companies
+Office Furniture and Fixtures Manufacturing
+Plastics and Rubber Product Manufacturing
+IT System Training and Support
+Construction Hardware Manufacturing
+Military and International Affairs
+Sugar and Confectionery Product Manufacturing
+Medical and Diagnostic Laboratories
+Chemical Raw Materials Manufacturing
+Wineries
+Legislative Offices
+Personal and Laundry Services
+Transportation Equipment Manufacturing
+Radio and Television Broadcasting
+Metal Ore Mining
+Public Assistance Programs
+Wholesale Recyclable Materials
+IT System Installation and Disposal
+School and Employee Bus Services
+Geothermal Electric Power Generation
+Wholesale Footwear
+Pipeline Transportation
+Wind Electric Power Generation
+Wholesale Furniture and Home Furnishings
+Spring and Wire Product Manufacturing
+Climate Data and Analytics
+Government Relations
+Insurance Carriers
+Tobacco
+Funds and Trusts
+Reupholstery and Furniture Repair
+Fruit and Vegetable Preserves Manufacturing
+Physicians
+Nonmetallic Mineral Mining
+Natural Gas Distribution
+Regenerative Design
+Highway, Street, and Bridge Construction
+Shuttles and Special Needs Transportation Services
+Credit Intermediation
+Steam and Air-Conditioning Supply
+Optometrists
+Racetracks
+Household Appliance Manufacturing
+Emergency and Relief Services
+Retail Recyclable Materials & Used Merchandise
+Utility System Construction
+Temporary Help Services
+Urban Transit Services
+Funeral Services
+Smart Meter Manufacturing
+Insurance and Employee Benefit Funds
+Utilities Administration
+Telecommunications Carriers
+Performing Arts and Spectator Sports
+Turned Products and Fastener Manufacturing
+Seafood Product Manufacturing
+Postal Services
+Wholesale Petroleum and Petroleum Products
+Consumer Goods Rental
+Nonresidential Building Construction
+Distilleries
+Retail Musical Instruments
+Zoos and Botanical Gardens
+Economic Programs
+Skiing Facilities
+Metal Valve, Ball, and Roller Manufacturing
+Oil Extraction
+Bed-and-Breakfasts, Hostels, Homestays
+Ambulance Services
+Pension Funds
+IT System Testing and Evaluation
+Courts of Law
+Securities and Commodity Exchanges
+Correctional Institutions
+Claims Adjusting, Actuarial Services
+Family Planning Centers
+Retail Gasoline
+Alternative Fuel Vehicle Manufacturing
+Wholesale Photography Equipment and Supplies
+Satellite Telecommunications
+Cutlery and Handtool Manufacturing
+Abrasives and Nonmetallic Minerals Manufacturing
+Hydroelectric Power Generation
+Ranching and Fisheries
+Oil and Coal Product Manufacturing
+Flight Training
+Interurban and Rural Bus Services
+Fossil Fuel Electric Power Generation
+Artificial Rubber and Synthetic Fiber Manufacturing
+Clay and Refractory Products Manufacturing
+Footwear and Leather Goods Repair
+Secretarial Schools
+Energy Technology
+Magnetic and Optical Media Manufacturing
+Natural Gas Extraction
+Cable and Satellite Programming
+Lime and Gypsum Products Manufacturing
+Circuses and Magic Shows
+Fuel Cell Manufacturing
+Savings Institutions
+Death Care Services

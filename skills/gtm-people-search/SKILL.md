@@ -65,7 +65,7 @@ Env var: `SERPAPI_API_KEY`
 
 | Priority | Provider | Cost | LinkedIn URLs | Key Strength |
 |----------|----------|------|---------------|-------------|
-| 1st | **BetterContact Lead Finder** | 0.10 cr/request | Yes | Cheaper fixed cost; good for high-volume batches |
+| 1st | **BetterContact Lead Finder** | 0.10 cr/lead returned | Yes | **Cheapest per lead** (2.5× under FE); good for high-volume batches |
 | 2nd | **FullEnrich Finder** | 0.25 cr/person | Yes | Richest filters; richer fields (seniority, headcount, industry) |
 | 3rd | **Pipe0 `amplemarket@2`** | 3.00 cr/page, **flat** (1 page = 100 records) | Yes | **Cheap waterfall for FE/BC misses** — separate index covers different shops (+36% shop coverage on DACH SMEs where FE had 0 hits). Company domain + name filters. Always ask for `limit: 100` — 25 costs the same |
 | 4th | **Pipe0 `crustdata@3`** | 0.15 cr **per result returned** (`limit: 25` → 3.75 worst case) | Yes | Richest filter set (29). Low additive value when run after amplemarket (+1 shop out of 81 in DACH test) |
@@ -79,7 +79,7 @@ Env var: `SERPAPI_API_KEY`
 1. **Tier 1** — E-commerce + Marketing titles (always run)
 2. **Tier 2** — Leadership titles (CEO/MD/Founder) — only if Tier 1 returns 0 contacts AND company traffic ≤ 200K visits/month (large shops likely have dedicated e-comm/marketing staff indexed by FE)
 
-Run the same two-tier logic on whichever finder leads the cadence for the segment (FE or BC). BC cost is per-request regardless of results; FE cost is per-person returned.
+Run the same two-tier logic on whichever finder leads the cadence for the segment (FE or BC). Both bill per person returned: BC 0.10, FE 0.25.
 
 When PhantomBuster is selected: read `_shared/phantombuster.md` and use the `/phantombuster` skill to generate the script. Phantom scripts: "LinkedIn Company Employees Export" (config key `PB_AGENT_EMPLOYEES`) and "Sales Navigator Search Export" (config key `PB_AGENT_SN_SEARCH`).
 
@@ -144,6 +144,33 @@ Both BetterContact and FullEnrich dashboards offer **free search** without API c
 **Cloudflare:** call with `curl` + a browser `User-Agent` — Python `requests`/`urllib` get blocked (error 1010). Never ship a urllib-based provider script. See conventions rule #8.
 **Domain-keyed index:** the Finder is keyed on company domain and misses orgs whose domain differs from the indexed one — **prefer name-based search** (`current_company_names` + location) over the domain filter; validate hits by domain-root or name token.
 
+### Company-keyed mode (companies came from FullEnrich Company Search)
+
+When `companies_raw.csv` carries `fe_company_id` (company-search → FullEnrich), skip names and
+domains entirely: query **`current_company_ids`** with FE's own id. The people response carries
+the same id at `employment.current.company.id`, so identity is an exact check instead of a
+fuzzy name comparison, and the domain-mismatch problem (conventions #11) goes away.
+`_shared/fe_search.py people` does this: one request per company, `limit = --per-company`, rows
+whose current-company id differs are dropped and counted, and each contact inherits the
+company's industry, headcount and HQ for contact-filter.
+
+```bash
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+  export $(grep -E '^FULLENRICH_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+  python3 ~/.claude/skills/gtm-pipeline/_shared/fe_search.py people \
+    --client-dir {client-slug}-gtm --filters {client-slug}-gtm/context/fe_people_filters.json \
+    --per-company 2 --dry-run   # ceiling = companies × per-company × 0.25
+```
+
+```json
+{"current_position_seniority_level": [{"value": "Owner"}, {"value": "Founder"}, {"value": "C-level"}, {"value": "Head"}, {"value": "Director"}]}
+```
+
+Prefer `current_position_seniority_level` (a closed enum) over titles here: the company is already
+pinned, so a seniority net plus local title-tier ranking in contact-filter beats a brittle title
+list. Companies that come back with 0 contacts fall through to the normal cadence (BetterContact →
+Pipe0) keyed on `company_domain`.
+
 ### Request
 ```json
 {
@@ -167,26 +194,40 @@ Both BetterContact and FullEnrich dashboards offer **free search** without API c
 |--------|------|---------|
 | `current_company_names` | object[] | `{"value": "Anthropic", "exact_match": true}` |
 | `current_company_domains` | object[] | `{"value": "google.com", "exact_match": true}` |
-| `current_company_linkedin_urls` | object[] | LinkedIn company URL |
+| `current_company_professional_network_urls` | object[] | LinkedIn company URL |
+| `current_company_ids` | object[] | FullEnrich company `id` from Company Search (exact join) |
 | `current_company_industries` | object[] | `"Software Development"` |
+| `current_company_professional_network_ids` | object[] | Numeric LinkedIn company id |
 | `current_company_types` | object[] | `"Public Company"`, `"Privately Held"` |
 | `current_company_headquarters` | object[] | `"San Francisco"` |
 | `current_company_headcounts` | object[] | `{"min": 50, "max": 200}` |
 | `current_company_founded_years` | object[] | `{"min": 2020, "max": 2024}` |
+| `current_company_specialties` | object[] | `"AI safety"` (self-declared company specialties) |
+| `current_company_technologies` | object[] | `"HubSpot"`, `"Shopify"` (detected tech stack) |
 | `current_position_titles` | object[] | `"Chief Technology Officer"` |
 | `current_position_seniority_level` | object[] | `"Director"`, `"VP"`, `"C-level"` |
+| `current_position_job_functions` | object[] | `"Customer Service"` (closed list) |
+| `current_position_sub_functions` | object[] | `"Call Center"` (closed list, nested under a function) |
 | `past_position_titles` | object[] | Past job title |
-| `past_company_names` / `domains` | object[] | Previous employer |
+| `past_company_names` | object[] | Previous employer name |
+| `past_company_domains` | object[] | Previous employer domain |
+| `person_ids` | object[] | FullEnrich person `id` |
 | `person_names` | object[] | `"John Smith"` |
-| `person_linkedin_urls` | object[] | Direct LinkedIn URL lookup |
+| `person_professional_network_urls` | object[] | Direct LinkedIn URL lookup |
+| `person_professional_network_ids` | object[] | Numeric LinkedIn profile id |
 | `person_locations` | object[] | `"South Africa"`, `"California"` |
+| `person_languages` | object[] | `"German"` |
 | `person_skills` | object[] | `"JavaScript"`, `"Project Management"` |
 | `current_position_years_in` | object[] | `{"min": 0, "max": 1}` (new in role) |
 | `current_company_years_at` | object[] | `{"min": 2, "max": 5}` (tenure) |
 | `person_universities` | object[] | `"Stanford University"` |
 | `current_company_days_since_last_job_change` | object[] | `{"min": 0, "max": 90}` (recent hires) |
 
-All filters support `exclude: true` for negative matching. Multiple filters within same field = AND logic.
+**Closed value lists:** industries = `_shared/fe_industries.txt`. Seniority = `Owner`, `Founder`, `C-level`, `Partner`, `VP`, `Head`, `Director`, `Manager`, `Senior`. Company types = 8 values (company-search → FullEnrich). Functions and sub-functions (~385 lines) and location granularity: https://docs.fullenrich.com/api/v2/general/enums. Fetch that page and grep it before mapping a function; never guess one. Functions + seniority are the enum alternative when the title filter is too loose (see Key Notes).
+
+All filters support `exclude: true` for negative matching. Values within one filter = OR, different filters = AND (FE's *Filtering Logic Explained* page; the endpoint's one-line summary says "AND within a field", but its own worked example contradicts that).
+
+Key names above are checked against the v2 OpenAPI spec (2026-09-17). Older notes here used `current_company_linkedin_urls` and `person_linkedin_urls`, which are **not in the current spec**. They most likely predate FE's `linkedin` → `professional_network` rename (the same rename as the response-side URL gotcha below), and the ~48% URL-filter hit rate shows the old key worked when it was recorded. Whether FE now rejects or silently ignores an unknown key is unverified, so `fe_search.py` refuses unknown keys.
 
 Pagination: `offset` + `limit` (max 100/page, max offset 10,000). Beyond 10k: use `search_after` cursor.
 
@@ -212,10 +253,10 @@ for person in people:
 ```
 
 ### Key Notes
-- `current_company_linkedin_urls` filter accepts LinkedIn company URLs directly (e.g. `https://www.linkedin.com/company/dojo-tech/`) — **no domain lookup needed** when you have LinkedIn company URLs in your input CSV
+- **Company LinkedIn URL = the fallback when name or domain are missing or miss.** `current_company_professional_network_urls` pins people to the company by its LinkedIn company URL (e.g. `https://www.linkedin.com/company/dojo-tech/`), so no domain lookup is needed when the input CSV only carries that URL. Order: name/domain → company LinkedIn URL.
 - Hit rate for EU SME audience (via LinkedIn URL filter): ~48% (15/31 companies). Very small/niche companies with few employees often have low FE index coverage — expect 0 results.
 - **Title filter is unreliable** — don't trust the API's title match. Query with **broad single-token titles** and score/filter roles **locally** in the response.
-- **The Finder search is 0-credit** (see conventions "People-Source Cadence") — run **union queries** (title tokens / full titles / name-only), then **dedupe by LinkedIn URL**.
+- **The Finder is NOT free:** 0.25 credits per person returned (FE *Credits & Testing Tips*). A person the workspace already exported costs nothing to fetch again, so overlapping **union queries** (title tokens / full titles / name-only) pay only for the new people. Cap `limit` per query, then **dedupe by LinkedIn URL**. The old "0-credit" note here was wrong for the API; FE's dashboard search is what's free.
 - **Drop the per-person `person_locations` filter** — it's often null in the index and silently returns zero results; filter location locally instead.
 
 ### Cost
@@ -256,6 +297,41 @@ https://docs.fullenrich.com/api/v2/people/search/post
 
 Returns: `{ "success": true, "request_id": "abc123" }`
 
+### All filters (`filters.*`, checked against the Lead Finder spec 2026-09-17)
+
+At least one filter is required (400 otherwise). List filters take `{"include": [...], "exclude": [...]}`.
+
+| Filter | Shape | Values |
+|---|---|---|
+| `company` | include/exclude | Company domains |
+| `company_linkedin_url` | include/exclude | Company LinkedIn URL or slug (normalised server-side). The fallback when name/domain are missing. |
+| `company_industry` | include/exclude | **120 exact Landbase industries** (not LinkedIn's) |
+| `company_hq_location` | include/exclude | Country name, state or city ("Germany", "Berlin, Germany") |
+| `company_technologies` | include/exclude | Exact values from the technologies taxonomy |
+| `company_keywords` | include/exclude | Free text, searched across the company profile |
+| `company_description` | include/exclude | Free-text phrases in the company description |
+| `company_headcount_min` / `_max` | integer | Converted server-side to overlapping size ranges |
+| `revenue_ranges` | include/exclude | `$0-$1M` `$1M-$5M` `$5M-$20M` `$20M-$100M` `$100M-$500M` `$500M-$1B` `$1B-$5B` `$5B-$10B` `$10B+` |
+| `last_funding_round_names` | include/exclude | 29 exact values (`Seed Round`, `Series A`, `Private Equity Round`, …) |
+| `last_funding_date_range` | `{gte, lte}` | `YYYY-MM-DD` |
+| `last_amount_raised_usd` / `total_amount_raised_usd` | `{gte, lte}` | USD |
+| `is_b2b` / `is_b2c` / `is_public` | boolean | `false` is sent as a real value |
+| `job_post_titles` | include/exclude | Titles the company is **hiring for right now** |
+| `job_posting_countries` / `job_posting_locations` | include/exclude | Where those open roles are |
+| `limit_per_company` | integer 1–100 | Caps leads per company, so results spread across accounts |
+| `lead_job_title` | include/exclude + `exact_match` | `false` (default) = title contains the value |
+| `lead_seniority` | include/exclude | `c_suite` `vp` `director` `head` `manager` `senior` `mid-level` `entry` `founder` `owner` `partner` `intern` |
+| `lead_department` / `lead_function` | include/exclude | Same 27 values for both, and merged if both are set (`Sales`, `Marketing`, `Operations`, `Customer Success`, …) |
+| `lead_location` | include/exclude | Country name, or an address with a comma ("Paris, France") |
+| `lead_skills`, `lead_fullname`, `lead_linkedin_url` | include/exclude | Free text / URL |
+
+Request level: `limit` (1–200) + zero-based `offset` to paginate (total in `summary.leads_found`), or `max_leads` (1–200, default 100) without pagination. Never set `enrich_email_address` / `enrich_phone_number` here: they bill enrichment inside the search and bypass the email waterfall.
+
+⚠ **Exact lists are case-sensitive, and an off-list value silently matches nothing** (industries, technologies, seniority, departments/functions, revenue, funding rounds, countries). A 0-lead result can mean a typo, not an empty market. Look values up first: https://doc.bettercontact.rocks/api-reference/taxonomies (technologies alone is ~1,700 lines, so grep it, don't read it).
+⚠ **`exclude` is applied after the search** (except `lead_job_title`'s, which the provider applies natively), so a request made only of excludes returns nothing. Pair every exclude with an include.
+⚠ **Submissions are not idempotent.** A retried POST that actually succeeded is a second request.
+⚠ **The API documents more filters than the BetterContact dashboard shows** (the UI has job title, seniority, department, location, skills, lead name, company name, industry, headcount, HQ, technologies, keywords). Funding, job postings, revenue, B2B/B2C, description and `limit_per_company` are API-only in the docs and **unverified in practice**. Check one before relying on it: run the search with and without that filter and compare `summary.leads_found`. An unchanged count means it was ignored; 0 usually means an off-list value. The dashboard's "exclude leads already exported" has no documented API equivalent.
+
 ### Poll
 ```
 GET https://app.bettercontact.rocks/api/v2/lead_finder/async/{request_id}
@@ -280,7 +356,13 @@ for lead in leads:
 When using a global domain (`.com` for Samsung, H&M, Amazon, etc.), BetterContact returns employees from **all countries**. Always add `"lead_location": {"include": ["Target Country"]}` for global-domain companies. Local ccTLD domains (`.co.za`, `.de`) are safe without it.
 
 ### Cost
-**0.10 credits per request** (fixed, regardless of number of leads returned or zero results).
+**0.10 credits per lead returned**, search only (never set `enrich_email_address` /
+`enrich_phone_number` — that bills enrichment on top and bypasses the email waterfall). So
+`limit` / `max_leads` is the cost ceiling, and `limit_per_company` caps what a single big company
+can cost you. Zero results cost nothing. Every result carries `credits_consumed` and
+`credits_left`; reconcile from those, not from the docs (the public credits page only says a search
+consumes no *enrichment* credits, and the endpoint also has a free-request quota: `402` "not enough
+tokens", `422` "out of free lead finder requests").
 
 ### Fields Returned
 BC returns fewer fields than FE — no `seniority`, `companyHeadcount`, `companyIndustry`, or `roleStartDate`. Derive `linkedinProfileSlug` from the LinkedIn URL (`/in/<slug>`). Split `contact_full_name` into first/last manually.

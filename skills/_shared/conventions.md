@@ -169,16 +169,99 @@ Scripts (`signal_search.py`, provider search/enrich, deck builder, `sanitize.py`
 
 ---
 
+## Search Routing: where to spend first
+
+Decide this **before the first paid search** (pipeline Step 2, demo Step 3). First split every ICP /
+prompt requirement into two kinds and write the split to `context/icp.md` under `## Search routing`:
+requirement → kind → provider + filter key + values, or the step that scores it.
+
+- **Filter:** a finder's filter expresses it (matrix below). **Always prefer the filter, even if it
+  means a different finder:** "raised a round in the last 6 months" and "hiring SDRs" are
+  BetterContact / Amplemarket filters, not research.
+- **Score:** no filter expresses it; it needs reading or judgement. Revenue from filings, website
+  traits (runs a shop, sells a category), a project or leadership change, "fits our offer", ranking.
+
+**Every finder returns the lead's company, so a people search produces the company list for free.**
+A Score requirement therefore does **not** justify searching companies first: screening a company
+you then discard costs the same either way, and the company step adds a second charge for the
+survivors' people. Per kept contact, with company-row price `c_co`, person-row price `c_p`, pass
+rate `p` and `k` contacts per company: people-first `c_p·k/p` vs company-first `c_co/p + c_p·k`.
+Company-first only wins when **`k > c_co / (c_p·(1-p))`**:
+- FullEnrich both ends (0.25 / 0.25): 2+ contacts per company at a 20–30% pass rate, 3+ at 50%.
+- BetterContact people (0.10) under FullEnrich companies (0.25): 4+ at 30%, 6+ at 50%.
+
+People-first also never pays for a company whose people the index doesn't carry.
+
+Routes:
+
+1. **Default — people first, screen after.** Search people with the company filters, take the
+   companies out of the results, run the Score pass on them (signal-search, research, agent
+   scoring), and drop the contacts whose company fails. Pull `target ÷ expected pass rate`.
+   To get the most distinct companies per credit use BetterContact `limit_per_company: 1`;
+   FullEnrich has no per-company cap, so its persona searches can cluster.
+2. **Company first** when one of these holds, not because a requirement needs scoring:
+   **≥2 contacts per company** (the math above), the **account list is itself a deliverable** the
+   client reviews or the pipeline gates on, or **discovery is already company-shaped** (a directory,
+   Sales Navigator, FindAll, a client CSV). Then people search keyed to those companies
+   (FullEnrich: `fe_company_id`; others: domain, then company LinkedIn URL).
+3. **Signal first** only when a signal is **mandatory and is the entry point** — companies without
+   it must never be contacted and no filter expresses it. Start from the signal source (FindAll,
+   news, job boards), derive companies, then people. A signal that a finder filters (funding,
+   hiring) belongs to the default route, and a signal used to *check* companies we already picked,
+   or as a message hook, runs after the search in either of the routes above.
+
+Headless runs decide alone and record the routing in `icp.md`.
+
+### Filter matrix (what each finder can express)
+
+`P` = FullEnrich People Search, `C` = FullEnrich Company Search, `BC` = BetterContact Lead Finder,
+`CD` = Pipe0 `crustdata@3`, `AM` = Pipe0 `amplemarket@2`. `parallel@1` / FindAll take everything
+as prose and validate nothing.
+
+| Requirement | P | C | BC | CD | AM |
+|---|---|---|---|---|---|
+| Industry | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Headcount | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Company HQ location | ✓ | ✓ | ✓ | – | ✓ |
+| Company type (private / public / nonprofit…) | ✓ | ✓ | public only | – | – |
+| Founded year | ✓ | ✓ | – | – | ✓ |
+| Technologies used | ✓ | ✓ | ✓ | – | – |
+| Specialties / profile keywords | ✓ | ✓ | ✓ | – | – |
+| Company description text | – | ✓ | ✓ | – | – |
+| Revenue | – | – | ✓ | – | ✓ |
+| Funding (round, date, amount / investors) | – | – | ✓ | – | ✓ |
+| Hiring (open job posts) | – | – | ✓ | – | ✓ |
+| B2B / B2C | – | – | ✓ | – | ✓ |
+| Person title / seniority / function or department | ✓ | – | ✓ | ✓ | ✓ |
+| Person location | ✓ (often null) | – | ✓ | ✓ | ✓ |
+| Skills | ✓ | – | ✓ | ✓ | – |
+| Languages | ✓ | – | – | ✓ | – |
+| New in role / tenure / recent job change | ✓ | – | – | ✓ | – |
+| Past employer or title | ✓ | – | – | ✓ | – |
+| Max leads per company | – | – | ✓ | – | – |
+
+Exact keys, value lists and gotchas: people-search **Provider A** (FullEnrich), **Provider B**
+(BetterContact), **Provider E** (Pipe0), company-search → FullEnrich. **Values are not portable
+between finders:** FullEnrich uses LinkedIn industries (`_shared/fe_industries.txt`, case-insensitive),
+BetterContact uses 120 Landbase industries (case-sensitive, and an off-list value silently matches
+nothing), and Pipe0 uses its own catalog.
+
+---
+
 ## People-Source Cadence
 
 Finder/enricher waterfall — stop as soon as a source yields enough **relevant, identity-verified**
 contacts. **Max 2 attempts per source** (e.g. a title-token query then a name-only query), then
 fall through:
 
-1. **FullEnrich Finder** (0-credit search) — lead for SME / owner-led / non-English-market
+0. **Companies came from FullEnrich Company Search?** Query people by `current_company_ids`
+   (`_shared/fe_search.py people`). It's an exact id join, so no name or domain matching is needed.
+   Only the companies that come back empty enter the waterfall below.
+1. **FullEnrich Finder** (0.25 credits per person returned; re-exports free) — lead for SME / owner-led / non-English-market
    segments (FE indexes these better than BC). Run union queries (title tokens, full titles,
    name-only), dedupe by LinkedIn URL, filter locally.
-2. **BetterContact Lead Finder** — for broader / English-market / larger-company segments.
+2. **BetterContact Lead Finder** (0.10 credits per lead returned — the cheapest finder per row) —
+   for broader / English-market / larger-company segments.
 3. **Pipe0 searches** — last-resort finder when FE+BC return 0 relevant candidates for a company
    (keyed on the real domain, it recovers companies the others miss). Order within Pipe0:
    `amplemarket@2` (3.00 flat for up to 100 rows) → `crustdata@3` (0.15/result, 3.75 worst case at
@@ -270,7 +353,7 @@ source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
 |----------|---------|---------|
 | `PIPE0_API_KEY` | Pipe0 | people-search, people-enrichment, company-enrichment |
 | `BETTERCONTACT_API_KEY` | BetterContact | people-search, people-enrichment |
-| `FULLENRICH_API_KEY` | FullEnrich | people-search, people-enrichment |
+| `FULLENRICH_API_KEY` | FullEnrich | company-search, people-search, people-enrichment |
 | `SERPAPI_API_KEY` | SerpAPI | company-search, people-search (domain lookup) |
 | `PARALLEL_API_KEY` | Parallel AI | people-search (FindAll), signal-search, company-search, company-enrichment |
 | `APIFY_API_KEY` | Apify | company-enrichment (SimilarWeb traffic) |
@@ -380,7 +463,8 @@ Several providers have similarly-named products. Be explicit about which is mean
 | **PhantomBuster Email Finder** | people-enrichment | **Priority-1 email enrichment** | PB's built-in email waterfall (BetterContact et al.) via the "Email Finder" phantom. Input staged from a Google Sheet by `_shared/pb_email_finder.py`. **Runs first; if N/A (no PB key / staging sheet / Google OAuth → exit 3), skip to FullEnrich.** |
 | **BetterContact Lead Finder** | people-search | Synchronous people discovery API | Returns contacts by company + role filters |
 | **BetterContact async enrichment** | people-enrichment | Async email/phone enrichment | Slow due to multi-provider waterfall. Email hit rate is low (~14% in our tests) — **prefer FullEnrich for email**. Acceptable for phone if user has patience. |
-| **FullEnrich Finder** | people-search | People discovery (returns LinkedIn URLs) | Required upstream of FullEnrich Enrich for email |
+| **FullEnrich Company Search** | company-search | Firmographic company discovery (`POST /v2/company/search`) | Default company source. 0.25 cr per company returned. Its `id` joins exactly to the Finder's `current_company_ids`. Script: `_shared/fe_search.py` |
+| **FullEnrich Finder** | people-search | People discovery (returns LinkedIn URLs) | Required upstream of FullEnrich Enrich for email. 0.25 cr per person returned, **not free** |
 | **FullEnrich Enrich (v2)** | people-enrichment | Email + phone enrichment | Faster and more reliable than BC for email; has MCP support |
 | **Pipe0 searches** | people-search, company-search | Discovery — finds new entities | `people:profiles:crustdata@3`, `people:profiles:amplemarket@2`, `people:entitysearch:parallel@1` |
 | **Pipe0 pipes** | people-enrichment | Enrichment — augments existing entities | `pipes/run` waterfall |
