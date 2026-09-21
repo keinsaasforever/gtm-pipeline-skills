@@ -1,6 +1,6 @@
 ---
 name: gtm-pipeline:signal-search
-description: Find buying intent signals for target companies and score them for purchase intent. Runs a Python script (signal_search.py) that orchestrates Parallel web search (always on), Firecrawl crawl (opt-in), Parallel structured enrichment (opt-in), and a Signal Assessment LLM that scores 1-100. Universal templates live in the script; client-specific prompts come from the working directory's context/ files. Runs standalone or in either pipeline workflow — does NOT require ICP scoring as input. Also triggers on "signal search", "find signals for", "buying intent".
+description: Find buying intent signals for target companies and score them for purchase intent. Runs a Python script (signal_search.py) that orchestrates Parallel web search (always on), a Firecrawl crawl of the companies web search left without a signal (fallback), Parallel structured enrichment (opt-in), and a Signal Assessment LLM that scores 1-100. Universal templates live in the script; client-specific prompts come from the working directory's context/ files. Runs standalone or in either pipeline workflow — does NOT require ICP scoring as input. Also triggers on "signal search", "find signals for", "buying intent".
 ---
 
 # Signal Search
@@ -95,10 +95,10 @@ out of the include bullets for the same reason. Typical excludes:
 |-----------|--------------|---------|---------------|
 | Max age of signals | "How recent must a signal be?" | 4 months | `--lookback-months` (gates Parallel `after_date` *and* the source freshness filter on search results and crawled pages) |
 | Web results per company | "How many web results per company should we scan?" | 12 | `--max-results` (raise for large/noisy companies, lower to save credits) |
-| Firecrawl on/off | "Does on-site content (careers/blog/press) carry the signal?" | off | `--firecrawl` or `--firecrawl-pages-dir` — see Step 4 |
+| Firecrawl | — (don't ask) | fallback | News listing + fresh items of the companies still without a signal after scoring — see Step 5c |
 | Enrichment on/off | "Do you need structured fields (funding stage, job URLs, tech stack) as their own columns?" | off | `--parallel-enrichment` |
 
-**Baked defaults — don't ask, only change in the script if a client truly needs it:** the crawl `excludePaths` (privacy/legal/cart/shop, plus agent-directed files like `agents.md`/`llms.txt`), the `scrapeOptions` (markdown, main-content-only, ad-block), and the Parallel-enrichment JSON schema (funding / hiring / digital-initiatives / tech-stack).
+**Baked defaults — don't ask, only change in the script if a client truly needs it:** the crawl `excludePaths` (privacy/legal/cart/shop, careers/job ads, plus agent-directed files like `agents.md`/`llms.txt`), the `scrapeOptions` (markdown, main-content-only, ad-block), and the Parallel-enrichment JSON schema (funding / hiring / digital-initiatives / tech-stack).
 
 ### Step 3 — Save the context files
 
@@ -111,17 +111,8 @@ Use AskUserQuestion to confirm. Defaults:
 | Source | Default | When to enable |
 |--------|---------|----------------|
 | Parallel web search | ON (always) | — |
-| Firecrawl website crawl | OFF | Enable when **on-site content matters** — e.g. the offering targets companies where careers pages, blog, or product pages reveal the buying signal. Skip for generic prospects where news is enough. |
+| Firecrawl website crawl | FALLBACK | Runs after scoring on the companies web search left without a signal (Step 5c). Nothing to decide here. |
 | Parallel structured enrichment | OFF | Enable when **structured fields are required downstream** — funding stage, hiring signals with job URLs, tech stack indicators that need to live in their own CSV columns. Skip if the scored signals JSON is enough. |
-
-**Two ways to run Firecrawl** (pick based on how you have Firecrawl access):
-
-| Route | Flag | Needs `FIRECRAWL_API_KEY`? | How it works |
-|-------|------|---------------------------|--------------|
-| **Native API** | `--firecrawl` | Yes | The script crawls each site via the Firecrawl API. One command, fully automated. |
-| **MCP / pre-crawled** | `--firecrawl-pages-dir DIR` | No | You crawl the sites with the **Firecrawl MCP** (or any tool) and drop `DIR/{domain}.json` files — each a JSON array of `{"markdown": ..., "metadata": {"ogUrl": ..., "article:published_time": ...}}`. The script reads those, applies the same freshness filter + extraction, and never touches the Firecrawl API. |
-
-Use the MCP route when this machine has Firecrawl only via MCP and no `FIRECRAWL_API_KEY` in the env file. When orchestrating the MCP route, prefer delegating the crawl to sub-agents so the heavy page markdown stays out of the main context — they write the `{domain}.json` files, then the script does the rest.
 
 ### Step 5 — Run the script
 
@@ -135,7 +126,6 @@ export $(grep -E '^(PARALLEL_API_KEY|FIRECRAWL_API_KEY)=' "$GTM_ENV_PATH" | xarg
     --limit 5 \
     --lookback-months 2 \
     --max-results 12 \
-    [--firecrawl | --firecrawl-pages-dir {client-slug}-gtm/firecrawl_pages] \
     [--parallel-enrichment]
 ```
 
@@ -200,6 +190,66 @@ gate must not come back through it (perma-trade, 2026-09-18: dropped news reache
 free-text fit fields). With no kept signal it says so and nothing else.
 Downstream `sanitize.py` drops any signal still lacking a source/date, citing a non-article URL, or left `PENDING`.
 
+### Step 5c — Firecrawl fallback: the companies still without a signal
+
+Web search misses what a company publishes only on its own site: project news, branch openings,
+press releases nobody syndicated. After 5b, write every company with **no kept signal** (none passed
+the gates, or only loosely fitting ones did, per Axis 2) to `csv/input/companies_nosignal.csv` (same
+columns as the input). Only these get the fallback; a company with a kept signal never does.
+
+**Limits:** at most **10 pages per company** (1 Firecrawl credit per page), markdown, main content
+only. Log the pages in `run_log.md`. Job ads don't count unless they carry a posting date inside the
+window, and most carry none, so don't fetch careers pages.
+
+**Listing first.** How you call Firecrawl is your choice; this order is what works:
+
+1. **Find the news listing:** the site's news, press, Aktuelles or blog overview. `firecrawl_map`
+   (1 credit, `search` narrows it) or the homepage menu shows where it is.
+2. **Fetch the listing** (1 credit). It shows each item's date and link. No listing, or none with
+   dates → stop: the site publishes nothing dated (depenbrock.de, 2026-09-21: an employer-branding
+   blog from 2024 and undated references).
+3. **Fetch only the items dated inside the window** that match `signal_criteria.md`. Listing and
+   items together stay within the 10 pages.
+
+Don't crawl the whole site: a crawl takes article pages in sitemap order, not newest first. On
+leonhard-weiss.de (2026-09-21) it spent 9 credits on archived press releases and missed all 3 inside
+the window; listing first found them for 2.
+
+**Through the date filter.** Save the fetched pages, unchanged, as one JSON array
+(`[{"markdown", "metadata"}]`) in `{client-slug}-gtm/firecrawl_pages/{domain}.json`, `{domain}` being the
+row's `company_domain` (no `www.`). With
+`FIRECRAWL_API_KEY`, fetch straight to disk so the markdown never passes through your context:
+
+```bash
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+export $(grep -E '^FIRECRAWL_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+for u in "$LISTING_URL" "$ITEM_URL"; do
+  curl -s -m 120 -X POST https://api.firecrawl.dev/v2/scrape -H "Authorization: Bearer $FIRECRAWL_API_KEY" \
+    -H "Content-Type: application/json" -d "{\"url\":\"$u\",\"formats\":[\"markdown\"],\"onlyMainContent\":true}"; echo
+done | python3 -c "import json,sys; json.dump([json.loads(l)['data'] for l in sys.stdin if l.strip()], open('{client-slug}-gtm/firecrawl_pages/{domain}.json','w'), ensure_ascii=False)"
+```
+
+With Firecrawl only as MCP, use `firecrawl_scrape` in sub-agents that write the result the same way.
+Then run the filter pass over all of them:
+
+```bash
+python3 ~/.claude/skills/gtm-signal-search/signal_search.py --client-dir {client-slug}-gtm \
+  --input-csv {client-slug}-gtm/csv/input/companies_nosignal.csv --crawl-only \
+  --firecrawl-pages-dir {client-slug}-gtm/firecrawl_pages
+```
+
+`--crawl-only` skips the web search (these companies had theirs) and writes `signals_crawl.csv` and
+`signals_raw_crawl/{domain}.json`, so the first pass stays as it was. A page is kept only with a date
+inside the window, as metadata or in its text. `website_urls_crawled` lists every page fetched, the
+dropped ones included. Score the kept pages with the 5b rubric. A listing page is never the source:
+cite the item's own URL, as 5b says. Write the result into the company's row in `signals.csv`. A
+company still without a kept signal stays ICP-fit.
+
+With no agent in the loop (`claude-cli` backend), `--crawl-only --firecrawl` lets the script crawl
+instead, with the ceiling above. Its crawl `prompt` comes from `signal_criteria.md`; the path words in
+`FIRECRAWL_CRAWL_PROMPT_TEMPLATE` steer which sections Firecrawl includes, and `FIRECRAWL_EXCLUDE_PATHS`
+replaces the excludes Firecrawl would generate from the prompt.
+
 ### Step 6 — Review and log
 
 Open `csv/intermediate/signals.csv`. Inspect actual rows for 2–3 companies:
@@ -219,6 +269,7 @@ Append a run summary to `run_log.md` per `conventions.md` (records processed, hi
 --output-csv PATH               override output (default: csv/intermediate/signals.csv)
 --firecrawl                     enable Firecrawl website crawl via the Firecrawl API (needs FIRECRAWL_API_KEY)
 --firecrawl-pages-dir PATH      read pre-crawled pages from PATH/{domain}.json instead of the API (no key; MCP route)
+--crawl-only                    Firecrawl fallback pass (Step 5c): no web search; writes signals_crawl.csv + signals_raw_crawl/
 --parallel-enrichment           enable Parallel structured enrichment
 --llm-backend {agent,claude-cli,openrouter}   where extraction+scoring happen (default: agent)
 --raw-evidence-dir PATH         where the agent backend writes raw evidence (default: csv/intermediate/signals_raw/)
@@ -286,7 +337,7 @@ lastRun              — YYYY-MM-DD
 These are baked into `signal_search.py` and you should not need to edit them per client. They describe HOW to extract and score, not WHAT the user cares about.
 
 - **Parallel web search request:** objective shape, `mode: one-shot`, `max_results: 12`, `source_policy.after_date`
-- **Firecrawl crawl request:** sitemap include, `limit: 15`, universal exclude paths (privacy/legal/contact/login/etc.), markdown only main content
+- **Firecrawl crawl request:** sitemap include, `limit: 10`, a `prompt` built from the include bullets of `signal_criteria.md`, universal exclude paths (privacy/legal/contact/login/careers/etc., each pinned to a whole path segment), markdown only main content
 - **Web search extraction prompt:** include/exclude framing, company-anchored ("If the company is not mentioned in a result, exclude that result")
 - **Firecrawl extraction prompt:** "do not extract" list (generic descriptions, old news, vague statements), structured output schema
 - **Signal Assessment system prompt:** High/Medium/Low Intent rubric, "cut through the buzz" guard, inference caution, domain verification
@@ -302,7 +353,7 @@ If any of these templates need to evolve (e.g. the n8n workflow's scoring rubric
 ## Cost Notes
 
 - Parallel web search (`pro` is unused here; we use the default `one-shot` mode): ~1 credit per company
-- Firecrawl crawl (15 pages, markdown only): ~15 credits per company
+- Firecrawl fallback: 1 credit per page, ≤ 10 per company, usually 1–3 (the listing + its fresh items), and only for companies web search left without a signal
 - Parallel enrichment (`processor: core`): ~5 credits per company
 - **`agent` backend (default): no external LLM cost** — the agent scores in-context (counts as normal session tokens). `openrouter` backend (legacy): ~$0.006–0.018 per company.
 

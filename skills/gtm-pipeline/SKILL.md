@@ -239,7 +239,7 @@ Signal-search runs `~/.claude/skills/gtm-signal-search/signal_search.py`. Univer
 
 Before invoking signal-search:
 1. Confirm all three files exist; collect any missing pieces from the user. If `signal_criteria.md` is thin, **help the user construct it** (include + exclude + tuning params like max-age and result count) — see the signal-search skill's Step 2 for the interview.
-2. Pick which optional sources to enable (`--firecrawl` or `--firecrawl-pages-dir`, `--parallel-enrichment`) based on whether on-site content / structured fields matter for this client. Use `--firecrawl-pages-dir` (Firecrawl-via-MCP) when there is no `FIRECRAWL_API_KEY` in the env.
+2. Enable `--parallel-enrichment` only when structured fields matter for this client. Firecrawl needs no decision: it is the fallback (signal-search Step 5c) for the companies web search leaves without a signal.
 
 No n8n workflow edits are required for signal-search anymore — the script reads everything from `context/` at runtime. Keys are injected via `_shared/resolve_env.sh` (resolves `$GTM_ENV_PATH` on any machine).
 

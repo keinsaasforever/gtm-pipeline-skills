@@ -313,7 +313,7 @@ export $(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY|FIRECRAWL_API_KEY|GEMINI
     --client-dir {client-slug}-gtm
 ```
 
-The `resolve_env.sh` source line ensures `$GTM_ENV_PATH` is set even in a fresh shell (see signal-search SKILL.md / conventions). For the demo, leave Firecrawl and Parallel enrichment **OFF** — web search + scoring is enough for a ~10-contact lead list. Enable Firecrawl only if on-site content (careers, blog) is the primary signal source; if this machine has Firecrawl only via MCP (no `FIRECRAWL_API_KEY`), use the `--firecrawl-pages-dir` route documented in the signal-search skill.
+The `resolve_env.sh` source line ensures `$GTM_ENV_PATH` is set even in a fresh shell (see signal-search SKILL.md / conventions). For the demo, leave Parallel enrichment **OFF**. After scoring, run the **Firecrawl fallback** (signal-search Step 5c) on the companies left without a kept signal: at most 10 pages each, scored with the same rubric. Every company it turns up a signal for moves from ICP-first to Signal-first.
 
 ### Merge signals back into contacts
 

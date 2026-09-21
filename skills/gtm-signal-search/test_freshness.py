@@ -43,4 +43,39 @@ for url in ("https://linkedin.com/company/klueh1911", "https://www.linkedin.com/
     assert not is_article_url(url), url
 assert not _signal_is_valid({"source_url": "https://linkedin.com/company/klueh1911", "date": iso(fresh)}, now - timedelta(days=60))
 assert _signal_is_valid({"source_url": "https://www.porr.de/de/presse/porr-baut-x-fab", "date": iso(fresh)}, now - timedelta(days=60))
+
+# Firecrawl fallback pass: no second web search, the crawled pages still go through the cutoff.
+import json, tempfile
+from pathlib import Path
+import signal_search as ss
+
+tmp = Path(tempfile.mkdtemp())
+(tmp / "context").mkdir()
+for name in ("icp.md", "offering.md"):
+    (tmp / "context" / name).write_text("x")
+(tmp / "context" / "signal_criteria.md").write_text(
+    "# Signal criteria — perma-trade\n\n## Include\n- Won a hospital project\n- Opened a branch\n\n## Not a signal\n- Heat-pump market news")
+ctx = ss.ClientContext.load(tmp)
+assert ctx.signal_hint == "Won a hospital project; Opened a branch", ctx.signal_hint  # was the seller's title
+
+(tmp / "pages").mkdir()
+(tmp / "pages" / "acme.de.json").write_text(json.dumps(pages))
+ss.parallel_web_search = lambda *a, **k: (_ for _ in ()).throw(AssertionError("web search on a crawl-only pass"))
+cfg = ss.RunConfig(use_firecrawl=False, use_parallel_enrichment=False, lookback_months=2, llm_backend="agent",
+                   claude_extract_model="", claude_scoring_model="", extract_model="", scoring_model="",
+                   gemini_extract_model="", gemini_scoring_model="", parallel_key="", firecrawl_key=None,
+                   openrouter_key="", gemini_key=None, context=ctx, raw_evidence_dir=tmp / "raw",
+                   firecrawl_pages_dir=tmp / "pages", crawl_only=True)
+ss.process_company({"company_name": "Acme", "company_website": "https://acme.de"}, cfg)
+raw = json.loads((tmp / "raw" / "acme.de.json").read_text())
+assert raw["web_search_results"] == [] and len(raw["website_urls_crawled"]) == 4 and len(raw["website_pages"]) == 1, raw
+
+# Firecrawl matches excludePaths anywhere in the path: a whole segment is excluded, a news slug is not.
+import re
+excluded = lambda path: any(re.search(p, path) for p in ss.FIRECRAWL_EXCLUDE_PATHS)
+for path in ("/karriere", "/de/jobs/", "/impressum.html", "/llms.txt", "/.well-known/x", "/shop/cart"):
+    assert excluded(path), path
+for path in ("/news/200-neue-jobs-in-erfurt", "/aktuelles/workshop-trinkwasser", "/referenzen/data-center-frankfurt",
+             "/presse/restore-programm"):
+    assert not excluded(path), path
 print("ok")

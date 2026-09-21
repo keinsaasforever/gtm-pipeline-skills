@@ -41,7 +41,7 @@ cannot drift.
 | Route | Filtered people search (gtm-demo 3b), BetterContact first with `limit_per_company: 1`, FullEnrich second. Switch to the research route (3c) when no industry value fits, or after **two** probe queries return <½ the target or mostly off-segment rows. |
 | Countries / regions | Exactly what the prompt names. Never add a neighbouring market. If it names none, use the client's own home market. |
 | Draft language | Each contact's own market language (bokmål for Norway, Swedish for Sweden, German for DACH…), English only when the market is English-speaking or the contact's own profile is English. Deck copy: English, unless the whole audience shares one non-English market, then that language. |
-| Signals | ON, but only for the **final selected companies**, after enrichment, and only while budget remains. Fresh ≤60 days, sourced from the article itself, verified per the signal rubric. No signal → ICP-fit card built from timeless fit facts only (gtm-demo Step 6 → Hook sources). |
+| Signals | ON, but only for the **final selected companies**, after enrichment, and only while budget remains. Fresh ≤60 days, sourced from the article itself, verified per the signal rubric. Companies web search leaves without a kept signal get the Firecrawl fallback (signal-search Step 5c): **10 pages per company at most**, counted in `spend.firecrawl_pages`, not in the $3. Still no signal → ICP-fit card built from timeless fit facts only (gtm-demo Step 6 → Hook sources). |
 | Phones | Never. |
 | Email waterfall | FullEnrich first (it returns a deliverability grade), PhantomBuster only for the misses and only if it is available. Drop any address whose domain is not the target company's. |
 | Deck CTA | keinsaas's booking link (gtm-demo Step 7b `{{CALENDAR_URL}}`). Never the prospect's own booking link. |
@@ -65,7 +65,7 @@ Write `{client-slug}-gtm/result.json` as the last action:
   "with_signals_enabled": true,
   "deck_path": "csv/output/... .html",
   "csv_path": "csv/output/contacts_enriched.csv",
-  "spend": { "credits": 41.5, "web_usd": 1.2, "cap_hit": false },
+  "spend": { "credits": 41.5, "web_usd": 1.2, "firecrawl_pages": 90, "cap_hit": false },
   "assumptions": ["…"],
   "shortfalls": ["…"],
   "sanitize_report": { "…": 0 } }

@@ -10,7 +10,9 @@ user's `{client}-gtm/context/` files at runtime.
 
 Sources (run per company, in parallel where possible):
   1. Parallel web search       — always on
-  2. Firecrawl website crawl   — opt-in (--firecrawl)
+  2. Firecrawl website pages   — the fallback for companies web search left without a signal
+                                 (--crawl-only): pages the agent fetched into --firecrawl-pages-dir
+                                 (SKILL.md Step 5c, listing first), or the script's crawl (--firecrawl)
   3. Parallel enrichment       — opt-in (--parallel-enrichment)
   4. Signal Assessment LLM     — always on, scores merged signals 1–100
 
@@ -83,22 +85,26 @@ DEFAULT_GEMINI_SCORING_MODEL = "gemini-3-pro-preview"
 # Demo default is 2 months (~60 days). Signals older than this are not "buying intent".
 DEFAULT_LOOKBACK_MONTHS = 2
 DEFAULT_MAX_SEARCH_RESULTS = 12
-DEFAULT_CRAWL_LIMIT = 15
+DEFAULT_CRAWL_LIMIT = 10  # pages = Firecrawl credits per company
 DEFAULT_CRAWL_POLL_INTERVAL = 30
 DEFAULT_CRAWL_POLL_TIMEOUT = 900  # 15 min
 
-# Universal Firecrawl crawl exclusions — pages that never contain signals.
-FIRECRAWL_EXCLUDE_PATHS = [
-    "privacy/*", "data/*", "impressum/*", "legal/*", "terms/*",
-    "terms-of-service/*", "terms-of-use/*", "agb/*", "datenschutz/*",
-    "dsgvo/*", "gdpr/*", "cookie/*", "cookies/*", "cookie-policy/*",
-    "contact/*", "kontakt/*", "faq/*", "support/*",
-    "login/*", "signup/*", "register/*", "checkout/*", "cart/*",
-    "shop/*", "store/*",
+# Universal Firecrawl crawl exclusions — pages that never contain signals. Firecrawl matches each
+# pattern as a regex anywhere in the path, so "shop/*" also dropped /aktuelles/workshop-… and
+# "data/*" /referenzen/data-center-…; each name is pinned to a whole path segment.
+FIRECRAWL_EXCLUDE_PATHS = ["/" + segment.replace(".", r"\.") + r"(/|\.|$)" for segment in (
+    "privacy", "privacy-policy", "data", "impressum", "legal", "terms",
+    "terms-of-service", "terms-of-use", "agb", "datenschutz", "datenschutzerklaerung",
+    "dsgvo", "gdpr", "cookie", "cookies", "cookie-policy",
+    "contact", "kontakt", "faq", "support",
+    "login", "signup", "register", "checkout", "cart",
+    "shop", "store",
+    # Job ads rarely carry a date, and an undated one never passes the freshness filter.
+    "career", "careers", "karriere", "jobs", "stellenangebote",
     # Agent/LLM-directed instruction files — never crawl. These pages exist to give
     # instructions to AI crawlers (a prompt-injection surface), not to carry buying signals.
-    "agents.md", "agent.md", "llms.txt", "llms-full.txt", "ai.txt", ".well-known/*",
-]
+    "agents.md", "agent.md", "llms.txt", "llms-full.txt", "ai.txt", ".well-known",
+)]
 
 # Web search objective — universal scaffolding. Signal types come from the user's
 # signal_criteria.md (substituted into {signal_bullets}).
@@ -178,11 +184,18 @@ Search results:
 {search_results_json}
 """
 
-# Firecrawl crawl prompt — hint for which pages to surface. Hints come from
-# signal_criteria.md (signal_hint).
+# Firecrawl crawl prompt — Firecrawl turns it into crawl options; explicit params such as
+# excludePaths override what it generates. The path words below steer its includePaths (checked with
+# /v2/crawl/params-preview, 2026-09-21); a section named otherwise is rarely crawled. The events come
+# from signal_criteria.md. A crawl takes pages in sitemap order, not newest first: the agent route
+# (SKILL.md Step 5c, listing first) finds fresh items better.
 FIRECRAWL_CRAWL_PROMPT_TEMPLATE = (
-    "Signals from the past {lookback_months} months: {signal_hint}. "
-    "Pages containing news, blog, career, press, investors, product launches, etc."
+    "Find pages that each report one dated company event from the past {lookback_months} months: "
+    "news articles, press releases, blog posts, project and reference write-ups "
+    "(paths like news, press, presse, pressemitteilungen, aktuelles, neuigkeiten, meldungen, blog, "
+    "magazin, projekte, projects, referenzen, references). "
+    "Events that matter: {signal_hint}. "
+    "Skip product and service pages, careers and job ads, and general company pages."
 )
 
 # Firecrawl extraction LLM — turns crawled markdown into structured signals.
@@ -489,9 +502,13 @@ class ClientContext:
         icp = (ctx / "icp.md").read_text().strip()
         offering = offering_path.read_text().strip()
         signal_criteria = (ctx / "signal_criteria.md").read_text().strip()
-        # signal_hint: short summary line for Firecrawl. Use first paragraph or first line.
-        first_para = signal_criteria.split("\n\n", 1)[0]
-        signal_hint = first_para.replace("\n", " ")[:300]
+        # signal_hint: the include bullets on one line, for the Firecrawl crawl prompt. The first
+        # paragraph used to serve, and in a normal file that is the "# Signal criteria — {seller}" title.
+        signal_hint = "; ".join(
+            line.strip().lstrip("-* ") for line in objective_bullets(signal_criteria).splitlines() if line.strip()
+        )
+        if len(signal_hint) > 600:
+            signal_hint = signal_hint[:600].rsplit("; ", 1)[0]  # whole bullets only
         return cls(client_dir, icp, offering, signal_criteria, signal_hint)
 
 
@@ -935,6 +952,8 @@ class RunConfig:
     # being crawled via the Firecrawl API. Lets users without a FIRECRAWL_API_KEY supply
     # pages crawled through the Firecrawl MCP (or any other means). No key required.
     firecrawl_pages_dir: Path | None = None
+    # The Firecrawl fallback pass (SKILL.md Step 5c): crawl only, no second paid web search.
+    crawl_only: bool = False
 
 
 def extract_domain(website: str) -> str:
@@ -966,13 +985,15 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
         return result
 
     # ---- Collection (deterministic; no LLM) ----
-    # Web search (always)
-    search_resp = parallel_web_search(
-        company_name, website, cfg.context.signal_criteria,
-        cfg.lookback_months, cfg.parallel_key, cfg.max_results,
-    )
-    raw_results = search_resp.get("results", []) if isinstance(search_resp, dict) else []
-    raw_results, dropped_by_cutoff = filter_search_results_by_freshness(raw_results, cfg.lookback_months)
+    # Web search, except on the crawl-only fallback pass (its companies were searched already)
+    raw_results, dropped_by_cutoff = [], {}
+    if not cfg.crawl_only:
+        search_resp = parallel_web_search(
+            company_name, website, cfg.context.signal_criteria,
+            cfg.lookback_months, cfg.parallel_key, cfg.max_results,
+        )
+        raw_results = search_resp.get("results", []) if isinstance(search_resp, dict) else []
+        raw_results, dropped_by_cutoff = filter_search_results_by_freshness(raw_results, cfg.lookback_months)
 
     # Firecrawl website pages (optional). Two routes:
     #  (a) firecrawl_pages_dir set -> read pre-crawled pages from {dir}/{domain}.json
@@ -995,6 +1016,9 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
             crawl_result = firecrawl_wait_for_completion(crawl_id, cfg.firecrawl_key)
             if crawl_result:
                 pages = crawl_result.get("data", [])
+    # Every crawled URL, the dropped ones too: its length is the Firecrawl credits spent, and it is
+    # the only way to tell afterwards whether the crawl picked the wrong pages or the site had nothing.
+    urls_crawled = [(p.get("metadata") or {}).get("sourceURL") or (p.get("metadata") or {}).get("url") for p in pages]
     if pages:
         pages = filter_crawl_pages_by_freshness(pages, cfg.lookback_months)
 
@@ -1024,6 +1048,7 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
                         "lookback_months": cfg.lookback_months,
                         "web_search_results": raw_results,
                         "web_search_dropped_by_cutoff": dropped_by_cutoff,
+                        "website_urls_crawled": urls_crawled,
                         "website_pages": pages,
                         "parallel_enrichment": enrichment,
                     }, ensure_ascii=False, indent=2),
@@ -1077,6 +1102,10 @@ def parse_args() -> argparse.Namespace:
                    help="Read pre-crawled Firecrawl pages from {dir}/{domain}.json instead of "
                         "calling the Firecrawl API. Use when you only have Firecrawl via MCP "
                         "(no FIRECRAWL_API_KEY): the agent crawls and writes the page files.")
+    p.add_argument("--crawl-only", action="store_true",
+                   help="Firecrawl fallback pass (SKILL.md Step 5c): no web search. Needs --firecrawl or "
+                        "--firecrawl-pages-dir. Writes signals_crawl.csv + signals_raw_crawl/, so the "
+                        "first pass is kept.")
     p.add_argument("--parallel-enrichment", action="store_true",
                    help="Enable Parallel structured enrichment (extra cost; useful for funding/hiring data points)")
     p.add_argument("--llm-backend", choices=["agent", "claude-cli", "openrouter"],
@@ -1117,8 +1146,12 @@ def main() -> int:
         print(f"ERROR: client dir does not exist: {client_dir}", file=sys.stderr)
         return 1
 
+    if args.crawl_only and not (args.firecrawl or args.firecrawl_pages_dir):
+        print("ERROR: --crawl-only needs --firecrawl or --firecrawl-pages-dir", file=sys.stderr)
+        return 1
+    suffix = "_crawl" if args.crawl_only else ""  # the fallback pass never overwrites the first
     input_csv = args.input_csv or (client_dir / "csv" / "input" / "companies_raw.csv")
-    output_csv = args.output_csv or (client_dir / "csv" / "intermediate" / "signals.csv")
+    output_csv = args.output_csv or (client_dir / "csv" / "intermediate" / f"signals{suffix}.csv")
     if not input_csv.exists():
         print(f"ERROR: input CSV not found: {input_csv}", file=sys.stderr)
         return 1
@@ -1145,7 +1178,7 @@ def main() -> int:
         return 1
 
     missing_keys = []
-    if not parallel_key:
+    if not parallel_key and (not args.crawl_only or args.parallel_enrichment):
         missing_keys.append("PARALLEL_API_KEY")
     if args.llm_backend == "openrouter" and not openrouter_key:
         missing_keys.append("OPENROUTER_API_KEY (required for --llm-backend openrouter)")
@@ -1165,7 +1198,8 @@ def main() -> int:
         else ("API" if args.firecrawl else "OFF")
     )
     print(f"Loaded {len(rows)} companies from {input_csv}")
-    print(f"Sources enabled: web_search=ON (max_results={args.max_results}), "
+    print(f"Sources enabled: web_search={'OFF (crawl-only)' if args.crawl_only else 'ON'} "
+          f"(max_results={args.max_results}), "
           f"firecrawl={firecrawl_mode}, "
           f"parallel_enrichment={'ON' if args.parallel_enrichment else 'OFF'}")
     print(f"LLM backend: {args.llm_backend}")
@@ -1184,7 +1218,7 @@ def main() -> int:
         print("DRY RUN — context + inputs validated, no API calls made.")
         return 0
 
-    raw_evidence_dir = args.raw_evidence_dir or (client_dir / "csv" / "intermediate" / "signals_raw")
+    raw_evidence_dir = args.raw_evidence_dir or (client_dir / "csv" / "intermediate" / f"signals_raw{suffix}")
 
     cfg = RunConfig(
         use_firecrawl=args.firecrawl,
@@ -1204,6 +1238,7 @@ def main() -> int:
         context=context,
         max_results=args.max_results,
         firecrawl_pages_dir=args.firecrawl_pages_dir,
+        crawl_only=args.crawl_only,
         raw_evidence_dir=raw_evidence_dir if args.llm_backend == "agent" else None,
     )
 
