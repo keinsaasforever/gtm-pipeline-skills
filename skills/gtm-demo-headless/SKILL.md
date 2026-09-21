@@ -33,13 +33,15 @@ cannot drift.
 
 | Decision | Headless default |
 |---|---|
-| Size | 10 contacts per segment, **2 segments**, even split. A third segment only if the first two end short, never past **30 total**. One contact per company. |
-| Segments | The top 2 buyer types by prominence on the client's own site (Step 1b). Ties break toward the segment the client's customer quotes come from. |
+| Size | 10 contacts per segment, **2 segments**, even split (3 when the prompt names three). A third segment only if the first two end short, never past **30 total**. One contact per company. |
+| Segments | **The customer groups the prompt names**, 10 each, at most 3. If it names none: the top 2 buyer types by prominence on the client's own site (Step 1b), ties breaking toward the segment the client's customer quotes come from. |
+| Existing customers | Excluded (gtm-demo Step 1, item 3): the client's reference/customer pages and partner or dealer finder, matched by **domain**, parent and sister companies included. |
+| Companies named in the prompt | Treated as existing customers (gtm-demo Step 1, item 4): excluded with their group, lookalikes shown, recorded under `## Assumptions`. |
 | Personas | Derived in Step 1b from the client site. Never search before `## Personas` exists in `context/icp.md`. |
 | Route | Filtered people search (gtm-demo 3b), BetterContact first with `limit_per_company: 1`, FullEnrich second. Switch to the research route (3c) when no industry value fits, or after **two** probe queries return <½ the target or mostly off-segment rows. |
 | Countries / regions | Exactly what the prompt names. Never add a neighbouring market. If it names none, use the client's own home market. |
 | Draft language | Each contact's own market language (bokmål for Norway, Swedish for Sweden, German for DACH…), English only when the market is English-speaking or the contact's own profile is English. Deck copy: English, unless the whole audience shares one non-English market, then that language. |
-| Signals | ON, but only for the **final selected companies**, after enrichment, and only while budget remains. Fresh ≤60 days, sourced, verified per the signal rubric. No signal → ICP-fit card. |
+| Signals | ON, but only for the **final selected companies**, after enrichment, and only while budget remains. Fresh ≤60 days, sourced from the article itself, verified per the signal rubric. No signal → ICP-fit card built from timeless fit facts only (gtm-demo Step 6 → Hook sources). |
 | Phones | Never. |
 | Email waterfall | FullEnrich first (it returns a deliverability grade), PhantomBuster only for the misses and only if it is available. Drop any address whose domain is not the target company's. |
 | Deck CTA | keinsaas's booking link (gtm-demo Step 7b `{{CALENDAR_URL}}`). Never the prospect's own booking link. |

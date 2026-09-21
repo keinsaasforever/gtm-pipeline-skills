@@ -25,8 +25,9 @@ genuinely ambiguous, and the operator can override any default. For an **unatten
 ## Demo Restrictions
 
 - **No phone enrichment** — email only
-- **Size: 10 contacts per segment, 2 segments by default** (split evenly), a third segment only if
-  the first two came back short and coverage is there. **30 contacts is the hard maximum**, and
+- **Size: 10 contacts per segment, 2 segments by default** (split evenly), 3 when the prompt names
+  three customer groups (Step 1b), otherwise a third segment only if the first two came back short
+  and coverage is there. **30 contacts is the hard maximum**, and
   **one contact per company** — a second contact at the same company only to fill a gap at the end.
   A bigger number the requester asks for does not raise the cap; it raises what you say in the
   hand-off ("this is a sample of a list we can extend").
@@ -67,6 +68,16 @@ they even sell / why do they want this audience" gap):
 2. **Determine the relationship to the target audience** — a target term (e.g. "call centers")
    is usually a segment they *sell to*, not what they are. Classify: sell-to / buy-from /
    acquire / partner / recruit. Persona keywords derive from this, not from a guess.
+3. **List who they already work with, and keep them out of the demo.** A demo that pitches the
+   client's own customers back to them is worse than a short one. Sources, all free: customer and
+   reference pages, case studies, logos and quotes, and a partner/dealer/installer finder (often a
+   public JSON feed behind the map). Save the list to `csv/input/client_existing.csv` and exclude by
+   **domain**, never by name: a name match flagged Weber u. Sohn, Schatten and Bühring for Weber HS,
+   Schatte and Bühr (perma-trade, 2026-09-18). A parent or sister company of a customer counts as
+   the customer.
+4. **Companies the prompt names as examples of its customers** ("Kunden wie Goldbeck, Züblin") are
+   treated as existing customers: exclude them and their group, show lookalikes, and record the
+   assumption. They are the best description of the segment, not leads.
 
 **Interactive vs deployed (headless):**
 - **Interactive:** if a must-have is genuinely ambiguous after auto-resolution, ask one concise
@@ -92,9 +103,11 @@ Work it out from the client's own site (the pages scraped in Step 1 — customer
 case studies and quotes are the best source; a customer quote names the buyer's exact title) plus
 the offering:
 
-1. **Segments** — which buyer types the client sells to, in *their* words (reduzer.com: contractor,
-   architect, developer, consultant). Rank them by how prominently the site sells to each, and take
-   the **top 2** for the demo (Demo Restrictions). Record why the others were dropped.
+1. **Segments** — **when the prompt names its customer groups, those are the segments**, 10
+   contacts each, up to 3 within the 30 cap (perma-trade named SHK firms, general contractors and FM
+   firms: three segments). Only when the prompt names none: which buyer types the client sells to,
+   in *their* words (reduzer.com: contractor, architect, developer, consultant), ranked by how
+   prominently the site sells to each, **top 2** (Demo Restrictions). Record why the others were dropped.
 2. **Tier 1 titles per segment** — the role that owns the problem day to day and would answer the
    message. Reference-check it: Reduzer's own quotes are from an "Environmental manager" at a
    contractor and a "Sustainability Manager" at a developer, which *is* the tier-1 list.
@@ -198,17 +211,6 @@ free. When the filters cannot bound it, 3c bounds it instead.
 - **Signal search first only** when a signal is mandatory *and* is the only way in (no filter
   covers it). Then: signal discovery → companies → people at those companies. A signal used to
   *rank* or to *hook* companies we already picked runs after the search, in Step 5.5.
-
-- **Pick the finder by the filters the ICP needs** (funding, hiring, revenue, B2B/B2C →
-  BetterContact; tenure or a recent job change → FullEnrich). A filter beats research.
-- **Any requirement that needs judgement** (a signal, a website trait, revenue from filings) is
-  screened **after** the people search, on the companies it returned: pull `10 ÷ expected pass rate`
-  contacts, screen, drop the ones whose company fails. Screen before Step 5 so email credits are
-  only spent on survivors.
-- **Company search first only** when the demo is meant to show the account list itself, or the
-  prompt already comes with a company list.
-- **Signal search first only** when a signal is mandatory *and* is the only way in (no filter
-  covers it). Then: signal discovery → companies → people at those companies.
 
 **Key fields to collect:**
 ```
@@ -341,7 +343,7 @@ with open('csv/output/contacts_enriched.csv', 'w', newline='') as f:
     w.writerows(rows_out)
 ```
 
-The message-generation step in Step 6 will then have `company_overall_summary` and `company_scored_signals` per contact — use the highest-scored signal as the message hook.
+The message-generation step in Step 6 will then have `company_overall_summary` and `company_scored_signals` per contact — use the highest-scored **kept** signal as the message hook (Step 6 → Hook sources).
 
 ---
 
@@ -377,6 +379,15 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 - Pushy CTAs ("Let's schedule a call this week")
 
 **If Step 5.5 ran:** for each contact, prefer the highest-scored signal from `company_scored_signals` as the hook over generic LinkedIn-post references. A score >= 70 signal anchored in real recent news is the strongest hook the demo can produce.
+
+**Hook sources — exactly two.** (1) A **kept signal**: dated inside the window, citing its article.
+(2) A **timeless fit fact**: what the company does, where, for whom and at what size, from its own
+site, plus the person's role. A dated event (a project, contract, acquisition, report, sale, post)
+that is not a kept signal never goes into a hook, a "why they fit" text or any other field, however
+it reached you. Cost of skipping it (perma-trade, 2026-09-18): the scorers wrote stale news into
+free-text fit fields, the signal gate never saw it, and drafts at five companies plus one fit text
+used events that had failed the gate (May to early July, and a post with no live link), which a
+deck-side fix then had to strip out.
 
 ### Generation Process
 
@@ -427,7 +438,8 @@ result to `csv/output/`.
    - **Header + hero + 4 stat tiles**, then segment blocks. Group contacts into **Signal-first**
      (fresh, sourced buying signal ≤ 60d → `sig-hot` red signal box with a live `.sigsrc` source
      link + date) and **ICP-first** (strong fit, no live signal → `sig-fit` blue "why they fit"
-     box, no source link). Use `.approach` blocks to frame each group; `.seg-meta` for counts.
+     box, no source link, built only from timeless fit facts: Step 6 → Hook sources). Use
+     `.approach` blocks to frame each group; `.seg-meta` for counts.
    - Each card = collapsible `<details class="lead">`: favicon, company + domain, attribute tags
      (`tag-sig`/`tag-icp` + language `tag-lang`), the signal/fit box, the decision-maker with
      LinkedIn + email and a deliverability badge (`est-ok` = verified email, `est-warn`
@@ -462,7 +474,11 @@ em-dashes; one email + one LinkedIn draft per verified-email card (LinkedIn-only
 cards) within char caps. **No third-party tool / data-provider name** appears in the rendered text
 (grep the visible copy for enrichment/search/scrape vendor names — none allowed; the lead's own
 LinkedIn link is the only exception). **German decks use Du-form** — flag any `Sie/Ihr/Ihnen`
-formal-address forms. **Hero is tight** — `{{HERO_HEADLINE}}` ≤ ~7 words and `{{HERO_INTRO}}` ≤ 2
+formal-address forms in the deck's own copy (the drafts follow the message prompt's register).
+**ICP-fit cards carry no dates:** the fit box and both drafts of every card without a kept signal
+contain no full date (`2026-07-07`, `07.07.2026`, `7. Juli 2026`, `July 7, 2026`) and no month
+followed by a year; a hit means a stale event slipped in, so rewrite that sentence from timeless
+fit facts. **Hero is tight** — `{{HERO_HEADLINE}}` ≤ ~7 words and `{{HERO_INTRO}}` ≤ 2
 sentences with no pipeline/sourcing detail. Also assert the deck's plumbing survived templating: the
 **Download-CSV button** (`id="dl"`) with a non-empty `CSV` string, the **footer CTA** (`.cta-btn`),
 and the Expand-all toggle (`id="toggle"`) are all present, and the embedded CSV row count == card

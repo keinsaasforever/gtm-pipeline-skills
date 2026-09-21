@@ -585,34 +585,82 @@ def firecrawl_wait_for_completion(crawl_id: str, api_key: str) -> dict[str, Any]
     return None
 
 
+# ────────────────────────────────────────────────────────────────────────────────
+# Freshness: the lookback cutoff is enforced on the evidence, before extraction or scoring
+# ────────────────────────────────────────────────────────────────────────────────
+#
+# Parallel's `after_date` only filters pages that carry a date. On the perma-trade run
+# (2026-09-18) 143 of 175 results had none, and every stale event that reached a message hook
+# came in through them. Both real signals of that run were undated too, but their text carried a
+# date, so reading dates out of the text keeps them while the stale and undated pages go.
+
+_MONTHS = {
+    **{m: i for i, m in enumerate(("januar", "februar", "märz", "april", "mai", "juni", "juli", "august",
+                                   "september", "oktober", "november", "dezember"), 1)},
+    **{m: i for i, m in enumerate(("january", "february", "march", "april", "may", "june", "july", "august",
+                                   "september", "october", "november", "december"), 1)},
+    "jan": 1, "feb": 2, "mar": 3, "mär": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "sept": 9,
+    "oct": 10, "okt": 10, "nov": 11, "dec": 12, "dez": 12,
+}
+_MON = "|".join(sorted(_MONTHS, key=len, reverse=True))
+_DATE_PATTERNS = (  # (pattern, groups -> (year, month, day))
+    (re.compile(r"\b(20\d\d)-(\d\d)-(\d\d)"), lambda g: (g[0], g[1], g[2])),                       # 2026-07-29
+    (re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(20\d\d)\b"), lambda g: (g[2], g[1], g[0])),              # 29.07.2026
+    (re.compile(rf"\b(\d{{1,2}})\.?\s+({_MON})\.?\s+(20\d\d)\b", re.I),
+     lambda g: (g[2], _MONTHS[g[1].lower()], g[0])),                                                 # 29. Juli 2026
+    (re.compile(rf"\b({_MON})\.?\s+(\d{{1,2}}),?\s+(20\d\d)\b", re.I),
+     lambda g: (g[2], _MONTHS[g[0].lower()], g[1])),                                                 # July 29, 2026
+)
+
+
+def dates_in(text: str) -> list[datetime]:
+    """Every full date (day, month and year) written in the text, in any of the four forms above."""
+    found: list[datetime] = []
+    for pattern, ymd in _DATE_PATTERNS:
+        for groups in pattern.findall(text or ""):
+            try:
+                y, m, d = ymd(groups)
+                found.append(datetime(int(y), int(m), int(d)))
+            except (ValueError, KeyError):
+                pass
+    return found
+
+
+def is_fresh(dates: list[datetime], lookback_months: int) -> bool:
+    now = datetime.utcnow()
+    return any(now - timedelta(days=lookback_months * 30) <= d <= now for d in dates)
+
+
+def filter_search_results_by_freshness(results: list[dict], lookback_months: int) -> tuple[list[dict], dict]:
+    """Keep a web-search result only if it carries a date inside the window: the provider's
+    publish_date when it has one, else any full date in the title or excerpts. Undated and
+    stale-only results are dropped. A fresh page can still re-report an older event; that call
+    is the scorer's (the event date counts, SKILL.md rubric)."""
+    kept: list[dict] = []
+    dropped = {"stale": 0, "undated": 0}
+    for r in results:
+        pub = r.get("publish_date")
+        dates = dates_in(str(pub)) if pub else dates_in(" ".join([r.get("title") or "", *(r.get("excerpts") or [])]))
+        if is_fresh(dates, lookback_months):
+            kept.append(r)
+        else:
+            dropped["stale" if dates else "undated"] += 1
+    return kept, dropped
+
+
 def filter_crawl_pages_by_freshness(pages: list[dict], lookback_months: int) -> list[dict]:
-    """Drop pages older than the lookback window. Mirrors the n8n `Filter out old` node."""
-    cutoff = datetime.utcnow() - timedelta(days=lookback_months * 30)
-    iso_re = re.compile(r"(\d{4}-\d{2}-\d{2})")
-    fresh: list[dict] = []
+    """Same rule for crawled pages: the page's publication metadata, else any full date in the
+    markdown. Until 2026-09-21 this kept stale and undated pages ("let the LLM filter"), so the
+    second freshness gate filtered nothing. `last_modified` is not a publication date: a site
+    rebuild stamps every old page with it."""
+    kept: list[dict] = []
     for p in pages:
         meta = p.get("metadata") or {}
-        date_str = (
-            meta.get("article:published_time")
-            or meta.get("published_time")
-            or meta.get("date")
-            or meta.get("last_modified")
-            or meta.get("publishedTime")
-        )
-        match = iso_re.search(str(date_str or ""))
-        if not match and p.get("markdown"):
-            match = iso_re.search(p["markdown"])
-        if match:
-            try:
-                d = datetime.strptime(match.group(1), "%Y-%m-%d")
-                if cutoff <= d <= datetime.utcnow():
-                    fresh.append(p)
-                    continue
-            except ValueError:
-                pass
-        # No parseable date — keep, let the LLM filter on content
-        fresh.append(p)
-    return fresh
+        stamp = meta.get("article:published_time") or meta.get("published_time") or meta.get("publishedTime") or meta.get("date")
+        dates = dates_in(str(stamp)) if stamp else dates_in(p.get("markdown") or "")
+        if is_fresh(dates, lookback_months):
+            kept.append(p)
+    return kept
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -924,6 +972,7 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
         cfg.lookback_months, cfg.parallel_key, cfg.max_results,
     )
     raw_results = search_resp.get("results", []) if isinstance(search_resp, dict) else []
+    raw_results, dropped_by_cutoff = filter_search_results_by_freshness(raw_results, cfg.lookback_months)
 
     # Firecrawl website pages (optional). Two routes:
     #  (a) firecrawl_pages_dir set -> read pre-crawled pages from {dir}/{domain}.json
@@ -974,6 +1023,7 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
                         "website": website,
                         "lookback_months": cfg.lookback_months,
                         "web_search_results": raw_results,
+                        "web_search_dropped_by_cutoff": dropped_by_cutoff,
                         "website_pages": pages,
                         "parallel_enrichment": enrichment,
                     }, ensure_ascii=False, indent=2),

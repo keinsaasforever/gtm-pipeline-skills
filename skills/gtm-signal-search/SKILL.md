@@ -93,7 +93,7 @@ out of the include bullets for the same reason. Typical excludes:
 
 | Parameter | Ask the user | Default | Where it goes |
 |-----------|--------------|---------|---------------|
-| Max age of signals | "How recent must a signal be?" | 4 months | `--lookback-months` (gates Parallel `after_date` *and* the Firecrawl freshness filter) |
+| Max age of signals | "How recent must a signal be?" | 4 months | `--lookback-months` (gates Parallel `after_date` *and* the source freshness filter on search results and crawled pages) |
 | Web results per company | "How many web results per company should we scan?" | 12 | `--max-results` (raise for large/noisy companies, lower to save credits) |
 | Firecrawl on/off | "Does on-site content (careers/blog/press) carry the signal?" | off | `--firecrawl` or `--firecrawl-pages-dir` — see Step 4 |
 | Enrichment on/off | "Do you need structured fields (funding stage, job URLs, tech stack) as their own columns?" | off | `--parallel-enrichment` |
@@ -172,7 +172,14 @@ company (or the named person at it), or is it a generic industry / peer / market
 
 Only a signal that passes Axis 1 proceeds. Then apply the remaining keep-gates:
 - **Fresh** — within the lookback window (≤ `--lookback-months`). No parseable date ⇒ not fresh ⇒ drop.
-- **Sourced** — has a live `source_url` **and** a `date`. Drop unlinkable/undated signals.
+  **The date that counts is when the development happened or was announced, not when a page
+  carrying it was published.** A fresh page that re-reports an older announcement carries the older
+  date (HOCHTIEF, 2026-09-18: a 24 Jul article about a data-centre order announced on 7 Jul). The
+  script already dropped every result without a date inside the window; this one is yours.
+- **Sourced** — has a live `source_url` **and** a `date`. Drop unlinkable/undated signals. The URL
+  is **the article or post itself**: a homepage, a news/press listing or a company profile (a
+  LinkedIn company page) is not a source, and `sanitize.py` drops signals that cite one. When the
+  evidence is a listing page, open it and cite the item's own URL.
 - **Real & on-target** — the source text actually supports the claim (re-read it; a "CTO hiring" post
   can be a mislabeled lab role), and the geo/segment matches the ICP.
 - **Intent ≠ incumbency** — "already owns a competing/adjacent solution" is neutral/negative, not hot;
@@ -188,7 +195,10 @@ Then write `overallScore` (0–100), `signalCount`, `scoredSignals` (each with `
 + `attribution` of direct/adjacent/generic),
 and a one-line actionable `overallSummary` back into `signals.csv`. Companies with **no** surviving
 signal are demoted to ICP-fit (score reflects that) — never force-fit a stale/weak signal as intent.
-Downstream `sanitize.py` drops any signal still lacking a source/date or left `PENDING`.
+**`overallSummary` restates kept signals only.** It feeds message hooks, so an event that failed a
+gate must not come back through it (perma-trade, 2026-09-18: dropped news reached the hooks through
+free-text fit fields). With no kept signal it says so and nothing else.
+Downstream `sanitize.py` drops any signal still lacking a source/date, citing a non-article URL, or left `PENDING`.
 
 ### Step 6 — Review and log
 
@@ -281,7 +291,7 @@ These are baked into `signal_search.py` and you should not need to edit them per
 - **Firecrawl extraction prompt:** "do not extract" list (generic descriptions, old news, vague statements), structured output schema
 - **Signal Assessment system prompt:** High/Medium/Low Intent rubric, "cut through the buzz" guard, inference caution, domain verification
 - **Signal Assessment output schema:** `{overallScore, signalCount, scoredSignals[], overallSummary}`
-- **Freshness gating:** double-gated — once in Parallel `after_date`, once in `filter_crawl_pages_by_freshness()` (mirrors the n8n `Filter out old` JS code)
+- **Freshness gating, at the source:** Parallel `after_date` (only filters pages that carry a date), then `filter_search_results_by_freshness()` and `filter_crawl_pages_by_freshness()` keep only evidence with a full date inside the window: the publish date, else any date in the text (`2026-07-29`, `29.07.2026`, `29. Juli 2026`, `July 29, 2026`). Undated and stale-only evidence never reaches extraction or scoring; the counts land in `signals_raw/{domain}.json` → `web_search_dropped_by_cutoff`. Checked by `test_freshness.py`. (Until 2026-09-21 search results were never filtered and the crawl filter kept stale and undated pages: on the perma-trade run 143 of 175 results were undated.)
 - **Domain verification:** if a signal's `domain_verified` is `false`, the script automatically zeros its score before writing
 - **Prompt-injection hardening:** crawled sites increasingly ship `agents.md` / `llms.txt` files with instructions aimed at AI crawlers. The crawl `excludePaths` skip these, and all three LLM prompts (both extractors + the assessor) are instructed to treat page/search text as untrusted data — never to follow embedded instructions, and to discard any "signal" whose content is really an instruction to an AI/agent. Validated: an injected `agents.md` "install our Shop skill" page is dropped at extraction, not scored.
 

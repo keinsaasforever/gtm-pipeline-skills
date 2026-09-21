@@ -23,6 +23,7 @@ import json
 import re
 import sys
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit
 
 # ── Columns that are internal provenance / technical and must never reach a lead ──
 # Matched case-insensitively, exact or as a prefix (e.g. "fe_", "_"). Extend per skill via arg.
@@ -96,13 +97,37 @@ def trim_to(text: str, limit: int) -> str:
     return (window[:cut] if cut > 0 else window).strip()
 
 
+# Last path segments that mark an index page, not the article itself.
+_LISTING_SEGMENTS = {
+    "news", "newsroom", "press", "presse", "press-releases", "pressemitteilungen", "pressemeldungen",
+    "press-and-media", "presse-und-medien", "media", "medien", "aktuelles", "neuigkeiten", "blog",
+    "projekte", "projects", "referenzen", "references", "karriere", "careers", "jobs", "about",
+    "about-us", "ueber-uns", "unternehmen", "company",
+}
+
+
+def is_article_url(url: str) -> bool:
+    """A signal must cite the article or post itself. A homepage, a news/press listing or a company
+    profile only shows that something exists somewhere, and nobody can check the claim against it
+    (Klüh, 2026-09-18: a "signal" cited a LinkedIn company page from which the post had gone)."""
+    parts = urlsplit(str(url))
+    segs = [s for s in parts.path.lower().split("/") if s]
+    if segs and re.fullmatch(r"[a-z]{2}(-[a-z]{2})?", segs[0]):  # language prefix /en/, /de-de/
+        segs = segs[1:]
+    if not segs or segs[-1] in _LISTING_SEGMENTS:
+        return False
+    if parts.netloc.lower().endswith("linkedin.com"):  # posts only, never a company or person page
+        return segs[0] in ("posts", "feed", "pulse")
+    return True
+
+
 def _signal_is_valid(sig: dict, cutoff: datetime | None) -> bool:
-    """A signal is lead-worthy only if it has a source URL, a parseable date, and (if a cutoff
-    is given) is within the freshness window. Undated/sourceless signals are dropped."""
+    """A signal is lead-worthy only if it cites the article itself, has a parseable date, and (if a
+    cutoff is given) is within the freshness window. Undated/sourceless signals are dropped."""
     if not isinstance(sig, dict):
         return False
     url = sig.get("source_url") or sig.get("source") or sig.get("url") or ""
-    if not str(url).startswith("http"):
+    if not str(url).startswith("http") or not is_article_url(url):
         return False
     raw_date = str(sig.get("date") or sig.get("published_at") or "").strip()
     dt = None

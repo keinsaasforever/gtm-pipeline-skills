@@ -306,7 +306,12 @@ and re-checked by `sanitize.py`):
   an action *at this company*.
 - **Fresh:** within the lookback window (demo default ≤ 60 days / `--lookback-months 2`). Undated
   signals never count as fresh. Stale-signal companies are **demoted to ICP-fit**, never force-fit.
+  The date is the event's, not the page's: a fresh article re-reporting an older announcement is
+  stale. `signal_search.py` drops undated and stale-only evidence before anyone reads it, and a
+  stale event never re-enters through a fit text or summary (demo Step 6 → Hook sources).
 - **Sourced:** carries a live `source_url` **and** a parseable `date`. Drop anything unlinkable.
+  The URL is the article or post itself, never a homepage, listing page or company profile
+  (`sanitize.is_article_url`).
 - **Real:** the source snippet actually supports the claim (re-verify — a "CTO hiring" post can be
   a mislabeled lab role). Geo/segment must match the ICP, not just be recent.
 - **Intent, not incumbency:** "already owns a competing/adjacent solution" is **neutral/negative**,
