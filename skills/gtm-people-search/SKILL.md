@@ -311,7 +311,7 @@ At least one filter is required (400 otherwise). List filters take `{"include": 
 | `company_keywords` | include/exclude | Free text, searched across the company profile |
 | `company_description` | include/exclude | Free-text phrases in the company description |
 | `company_headcount_min` / `_max` | integer | Converted server-side to overlapping size ranges |
-| `revenue_ranges` | include/exclude | `$0-$1M` `$1M-$5M` `$5M-$20M` `$20M-$100M` `$100M-$500M` `$500M-$1B` `$1B-$5B` `$5B-$10B` `$10B+` |
+| `revenue_ranges` | include/exclude | 9 USD buckets from 0–1M to 10B+; exact strings in `_shared/finder_values.md` |
 | `last_funding_round_names` | include/exclude | 29 exact values (`Seed Round`, `Series A`, `Private Equity Round`, …) |
 | `last_funding_date_range` | `{gte, lte}` | `YYYY-MM-DD` |
 | `last_amount_raised_usd` / `total_amount_raised_usd` | `{gte, lte}` | USD |
@@ -329,6 +329,7 @@ Request level: `limit` (1–200) + zero-based `offset` to paginate (total in `su
 
 ⚠ **Exact lists are case-sensitive, and an off-list value silently matches nothing** (industries, technologies, seniority, departments/functions, revenue, funding rounds, countries). A 0-lead result can mean a typo, not an empty market. Look values up first: https://doc.bettercontact.rocks/api-reference/taxonomies (technologies alone is ~1,700 lines, so grep it, don't read it).
 ⚠ **An on-list industry value can still poison the whole query.** Measured 2026-09-17 (Norway, same three `lead_job_title` values, only the industry list changed): `["Construction"]` → 2 leads, `+ "Civil Engineering"` → 2, `+ "Commercial Real Estate"` → 2, `+ "Architecture & Planning"` → **0**. `Architecture & Planning` is printed in BC's own 120-value list, yet including it zeroes the result instead of widening it (industry include should be OR). **Add industry values one at a time and watch `summary.leads_found`;** a value that drops the count to 0 is broken, not selective — drop it and, if that segment matters, reach it through `company_keywords` / `company_description` instead.
+⚠ **Known traps (2026-09-24):** nine on-list industries zero every query they join, there is no Machinery value, and `company_hq_location` is not honoured; the list and details are in `_shared/finder_values.md`. A `company` domain list (+ `lead_location`, titles, `limit_per_company`) is reliable and was billed 0.0.
 ⚠ **`exclude` is applied after the search** (except `lead_job_title`'s, which the provider applies natively), so a request made only of excludes returns nothing. Pair every exclude with an include.
 ⚠ **Submissions are not idempotent.** A retried POST that actually succeeded is a second request.
 ⚠ **The API documents more filters than the BetterContact dashboard shows** (the UI has job title, seniority, department, location, skills, lead name, company name, industry, headcount, HQ, technologies, keywords). Funding, job postings, revenue, B2B/B2C, description and `limit_per_company` are API-only in the docs and **unverified in practice**. Check one before relying on it: run the search with and without that filter and compare `summary.leads_found`. An unchanged count means it was ignored; 0 usually means an off-list value. The dashboard's "exclude leads already exported" has no documented API equivalent.
@@ -506,7 +507,7 @@ Enums:
 ### `amplemarket@2` — 21 filters
 
 **Plain array of string (4):** `current_job_titles`, `current_employer_investors`, `current_employer_open_position_titles`, `school_names`
-**Plain array of enum (5):** `current_departments` (14), `current_seniority_levels` (14), `current_job_functions` (196), `current_employer_linkedin_industries` (501), `current_employer_estimated_revenue` (5: `$0-$1M`, `$1M-$10M`, `$10M-$100M`, `$100M-$1B`, `$1B+`)
+**Plain array of enum (5):** `current_departments` (14), `current_seniority_levels` (14), `current_job_functions` (196), `current_employer_linkedin_industries` (501), `current_employer_estimated_revenue` (5 USD buckets, exact strings in `_shared/finder_values.md`)
 **Object `{"include": [...], "exclude": [...]}` (4):** `current_locations`, `current_employer_locations` (← employer **HQ**, not the person), `current_employer_names`, `current_employer_domains`
 **Range `{"min": …, "max": …}` (1):** `current_employer_founded_year`
 **Scalar (1):** `person_name` (string | null)

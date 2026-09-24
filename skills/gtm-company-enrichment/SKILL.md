@@ -35,7 +35,7 @@ Add structured company data. Choose provider based on what's available:
 | Provider | Data Points | Input needed | Cost | Notes |
 |----------|-------------|--------------|------|-------|
 | **PB SN Scraper** | Full SN profile: headcount by dept, growth metrics, revenue range, industry, location | SN company URL | Free (SN account) | Most comprehensive |
-| **Parallel Task Group** | Custom fields via web research | Company name + domain | ~$0.025–0.05/row | Flexible output schema. Ask which processor |
+| **Parallel Task Group** | Custom fields via web research | Company name + domain | ~USD 0.025–0.05/row | Flexible output schema. Ask which processor |
 | **SimilarWeb via Apify** | Monthly traffic, traffic sources | Domain | Apify credits | Actor: `curious_coder/similarweb-scraper` |
 | **Firecrawl** | Website content, tech stack signals | Domain | Firecrawl credits | Scrape + extract |
 | **SerpAPI** | Domain from company name | Company name | SerpAPI credits | Google search → extract domain |

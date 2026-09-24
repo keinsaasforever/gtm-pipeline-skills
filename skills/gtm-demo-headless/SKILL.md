@@ -20,7 +20,8 @@ cannot drift.
 
 1. **Never ask.** No AskUserQuestion, no "confirm before proceeding", no waiting. Every ambiguity is
    resolved by the defaults below and recorded in `context/icp.md` under `## Assumptions`.
-2. **Never exceed the budget: 70 credits + $3 of web research per run.** Read each provider's own
+2. **Never exceed the budget: 70 credits + USD 3 of web research per run** (PhantomBuster runs don't
+   count: flat plan). Read each provider's own
    credit figure as you go (`metadata.credits`, `credits_consumed`, account balance) and keep a
    running total in `run_log.md`. At the cap: stop buying, finish with what you have, log the
    shortfall in `result.json`. Do not "just top up a little".
@@ -41,9 +42,10 @@ cannot drift.
 | Route | Filtered people search (gtm-demo 3b), BetterContact first with `limit_per_company: 1`, FullEnrich second. Switch to the research route (3c) when no industry value fits, or after **two** probe queries return <½ the target or mostly off-segment rows. |
 | Countries / regions | Exactly what the prompt names. Never add a neighbouring market. If it names none, use the client's own home market. |
 | Draft language | Each contact's own market language (bokmål for Norway, Swedish for Sweden, German for DACH…), English only when the market is English-speaking or the contact's own profile is English. Deck copy: English, unless the whole audience shares one non-English market, then that language. |
-| Signals | ON, but only for the **final selected companies**, after enrichment, and only while budget remains. Fresh ≤60 days, sourced from the article itself, verified per the signal rubric. Companies web search leaves without a kept signal get the Firecrawl fallback (signal-search Step 5c): **10 pages per company at most**, counted in `spend.firecrawl_pages`, not in the $3. Still no signal → ICP-fit card built from timeless fit facts only (gtm-demo Step 6 → Hook sources). |
+| Signals | ON, but only for the **final selected companies**, after enrichment, and only while budget remains. Strong signals only; a product launch only when it creates the need the offering serves (gtm-demo Step 6). Fresh ≤60 days, sourced from the article itself, verified per the signal rubric. Companies web search leaves without a kept signal get the Firecrawl fallback (signal-search Step 5c): **10 pages per company at most**, counted in `spend.firecrawl_pages`, not in the USD 3. Still no signal → ICP-fit card built from timeless fit facts only (gtm-demo Step 6 → Hook sources). |
 | Phones | Never. |
-| Email waterfall | FullEnrich first (it returns a deliverability grade), PhantomBuster only for the misses and only if it is available. Drop any address whose domain is not the target company's. |
+| Email waterfall | **Kitt first** (`_shared/kitt.py`, `KITT_API_KEY`), then **one** other provider for its misses (PhantomBuster if available, else FullEnrich) — never a third. Every address that other provider found goes back through the **Kitt gate**, which keeps `valid` and `valid-risky` (catch-all): unknown, invalid and unchecked lose the address (gtm-demo Step 5). Drop any address whose domain is not the target company's. A lost address never drops the contact — a spare at the same company with a kept address takes the slot, otherwise the card ships LinkedIn-only with the `est-warn` badge. |
+| Draft register | **Your judgement, per persona**, recorded in `## Assumptions`: formal (Sie / vous) for C-level and engineering or department heads at established industrials, corporates and the public sector; informal (Du) where the persona itself writes that way (founders, startups, agencies, most tech teams). One register per persona group, not per person. |
 | Deck CTA | keinsaas's booking link (gtm-demo Step 7b `{{CALENDAR_URL}}`). Never the prospect's own booking link. |
 | Delivery | Never send anything. Write the deck, the CSV and the cover email to files. |
 | Failure of any single step | Log it, continue with the next step, and report it in `result.json`. A missing signal, a missing email or a failed provider never aborts the run. |
@@ -61,7 +63,7 @@ Write `{client-slug}-gtm/result.json` as the last action:
   "contacts": 20,
   "companies": 20,
   "with_signal": 7,
-  "with_email": 18,
+  "with_email": 18,            // kept addresses only — every one is Kitt `valid` or `valid-risky`
   "with_signals_enabled": true,
   "deck_path": "csv/output/... .html",
   "csv_path": "csv/output/contacts_enriched.csv",

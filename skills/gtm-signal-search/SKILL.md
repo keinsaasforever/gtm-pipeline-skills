@@ -239,8 +239,8 @@ python3 ~/.claude/skills/gtm-signal-search/signal_search.py --client-dir {client
 ```
 
 `--crawl-only` skips the web search (these companies had theirs) and writes `signals_crawl.csv` and
-`signals_raw_crawl/{domain}.json`, so the first pass stays as it was. A page is kept only with a date
-inside the window, as metadata or in its text. `website_urls_crawled` lists every page fetched, the
+`signals_raw_crawl/{domain}.json`, so the first pass stays as it was. A page is kept only when its own date
+is inside the window: the date printed on the page first, its metadata only when the text has none. `website_urls_crawled` lists every page fetched, the
 dropped ones included. Score the kept pages with the 5b rubric. A listing page is never the source:
 cite the item's own URL, as 5b says. Write the result into the company's row in `signals.csv`. A
 company still without a kept signal stays ICP-fit.
@@ -342,7 +342,7 @@ These are baked into `signal_search.py` and you should not need to edit them per
 - **Firecrawl extraction prompt:** "do not extract" list (generic descriptions, old news, vague statements), structured output schema
 - **Signal Assessment system prompt:** High/Medium/Low Intent rubric, "cut through the buzz" guard, inference caution, domain verification
 - **Signal Assessment output schema:** `{overallScore, signalCount, scoredSignals[], overallSummary}`
-- **Freshness gating, at the source:** Parallel `after_date` (only filters pages that carry a date), then `filter_search_results_by_freshness()` and `filter_crawl_pages_by_freshness()` keep only evidence with a full date inside the window: the publish date, else any date in the text (`2026-07-29`, `29.07.2026`, `29. Juli 2026`, `July 29, 2026`). Undated and stale-only evidence never reaches extraction or scoring; the counts land in `signals_raw/{domain}.json` → `web_search_dropped_by_cutoff`. Checked by `test_freshness.py`. (Until 2026-09-21 search results were never filtered and the crawl filter kept stale and undated pages: on the perma-trade run 143 of 175 results were undated.)
+- **Freshness gating, at the source:** Parallel `after_date` (only filters pages that carry a date), then `filter_search_results_by_freshness()` and `filter_crawl_pages_by_freshness()` keep only evidence whose own date is inside the window: the date the source prints for its item (`source_date()`: a date line right above the headline, else the first full date after it, else the latest in the text), and only when the text carries no full date the provider's publish date or page metadata (`2026-07-29`, `29.07.2026`, `01/09/2025`, `29. Juli 2026`, `July 29, 2026`; an ambiguous slash date takes its later past reading). The provider's stamp is often the crawl date: on the Sphere run (2026-09-24) a HENSOLDT article dated 01/09/2025 came back as 2026-09-22, and a 2022 MULTIVAC item as 2026-09-06 through the week's news in its sidebar. Undated and stale evidence never reaches extraction or scoring; the counts land in `signals_raw/{domain}.json` → `web_search_dropped_by_cutoff`. Checked by `test_freshness.py`. (Until 2026-09-21 search results were never filtered and the crawl filter kept stale and undated pages: on the perma-trade run 143 of 175 results were undated.)
 - **Domain verification:** if a signal's `domain_verified` is `false`, the script automatically zeros its score before writing
 - **Prompt-injection hardening:** crawled sites increasingly ship `agents.md` / `llms.txt` files with instructions aimed at AI crawlers. The crawl `excludePaths` skip these, and all three LLM prompts (both extractors + the assessor) are instructed to treat page/search text as untrusted data — never to follow embedded instructions, and to discard any "signal" whose content is really an instruction to an AI/agent. Validated: an injected `agents.md` "install our Shop skill" page is dropped at extraction, not scored.
 
@@ -355,9 +355,9 @@ If any of these templates need to evolve (e.g. the n8n workflow's scoring rubric
 - Parallel web search (`pro` is unused here; we use the default `one-shot` mode): ~1 credit per company
 - Firecrawl fallback: 1 credit per page, ≤ 10 per company, usually 1–3 (the listing + its fresh items), and only for companies web search left without a signal
 - Parallel enrichment (`processor: core`): ~5 credits per company
-- **`agent` backend (default): no external LLM cost** — the agent scores in-context (counts as normal session tokens). `openrouter` backend (legacy): ~$0.006–0.018 per company.
+- **`agent` backend (default): no external LLM cost** — the agent scores in-context (counts as normal session tokens). `openrouter` backend (legacy): ~USD 0.006–0.018 per company.
 
-Order of magnitude (agent backend): **web search only ≈ $0.01 per company; +firecrawl ≈ $0.05 per company; +parallel enrichment ≈ $0.08 per company** (Parallel/Firecrawl credits only). Always test on 5 before the full batch.
+Order of magnitude (agent backend): **web search only ≈ USD 0.01 per company; +firecrawl ≈ USD 0.05 per company; +parallel enrichment ≈ USD 0.08 per company** (Parallel/Firecrawl credits only). Always test on 5 before the full batch.
 
 ---
 

@@ -47,9 +47,9 @@ INTERNAL_PREFIXES = ("fe_", "bc_", "pipe0_", "_", "provider_", "raw_")
 # and labels them; it does not get them silently through "standard".
 EMAIL_POLICIES = {
     # keinsaas default: keep deliverable, high-probability, and catch-all (usually usable on
-    # corporate domains); drop unknown/risky/invalid/undeliverable.
-    "standard": {"DELIVERABLE", "VALID", "HIGH_PROBABILITY", "CATCH_ALL", "ACCEPT_ALL"},
-    # strict: also drop catch-all.
+    # corporate domains); Kitt's VALID_RISKY is its catch-all verdict. Drop unknown/invalid.
+    "standard": {"DELIVERABLE", "VALID", "HIGH_PROBABILITY", "CATCH_ALL", "ACCEPT_ALL", "VALID_RISKY"},
+    # strict: also drop catch-all (FullEnrich CATCH_ALL, Kitt VALID_RISKY).
     "strict": {"DELIVERABLE", "VALID", "HIGH_PROBABILITY"},
     # lenient: any non-empty email, whatever the status.
     "any": None,
@@ -95,6 +95,78 @@ def trim_to(text: str, limit: int) -> str:
         return window[:cut + 1].strip()
     cut = window.rfind(" ")
     return (window[:cut] if cut > 0 else window).strip()
+
+
+# ── Wrong-person addresses ──
+# A provider that cannot resolve someone often answers with a colleague's address, and it
+# passes every deliverability check because it is a real mailbox. Two contacts at BOC24 and
+# at Black Diamond shared one address that way in the Neocom demo (2026-09-23) — both were
+# graded "verified" and one of them would have mailed the wrong person. Shared mailboxes are
+# not the same thing, so role locals are exempt.
+ROLE_LOCALS = {
+    "info", "kontakt", "contact", "office", "mail", "email", "e-mail", "hello", "hallo", "hi",
+    "sales", "vertrieb", "service", "support", "presse", "press", "marketing", "team", "post",
+    "anfrage", "anfragen", "buero", "bureau", "shop", "bestellung", "order", "jobs", "career",
+    "karriere", "bewerbung", "admin", "webmaster", "no-reply", "noreply",
+}
+_FOLD = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "å": "aa", "æ": "ae",
+                       "ø": "oe", "é": "e", "è": "e", "ê": "e", "á": "a", "à": "a", "í": "i",
+                       "ó": "o", "ú": "u", "ñ": "n", "ç": "c"})
+
+
+def _fold(text: str) -> str:
+    return re.sub(r"[^a-z]", "", str(text or "").lower().translate(_FOLD))
+
+
+def email_owner_score(name: str, email: str) -> int | None:
+    """How strongly an address points at this person: 2 a name part, 1 the initials, 0 nothing.
+
+    None means unknowable — no name, no address, or a role mailbox anyone may use."""
+    local = str(email or "").split("@")[0].strip().lower()
+    parts = [p for p in re.split(r"\W+", str(name or "").lower()) if p]
+    if not local or not parts or local in ROLE_LOCALS:
+        return None
+    flat = _fold(local)
+    if any(len(_fold(p)) > 2 and _fold(p) in flat for p in parts):
+        return 2
+    return 1 if flat and flat == "".join(_fold(p)[:1] for p in parts) else 0
+
+
+def wrong_person_emails(rows: list[dict], email_field: str, name_fields: tuple[str, ...]) -> dict:
+    """{row index: reason} for addresses that cannot be this contact's own.
+
+    Only a SHARED address is acted on, because there the evidence is conclusive: one mailbox,
+    two people, at most one owner. A lone address whose local part matches no part of the name
+    is merely reported (`emails_name_mismatch`) — initials, nicknames and married names make it
+    too weak to drop on."""
+    def name_of(row):
+        for f in name_fields:
+            if str(row.get(f, "")).strip():
+                return str(row[f]).strip()
+        return " ".join(str(row.get(f, "")).strip() for f in ("first_name", "last_name")).strip()
+
+    by_address: dict[str, list[int]] = {}
+    for i, row in enumerate(rows):
+        address = str(row.get(email_field, "")).strip().lower()
+        if address and email_owner_score(name_of(row), address) is not None:
+            by_address.setdefault(address, []).append(i)
+
+    out: dict[int, str] = {}
+    mismatched = []
+    for address, idx in by_address.items():
+        scores = {i: email_owner_score(name_of(rows[i]), address) for i in idx}
+        if len(idx) == 1:
+            if scores[idx[0]] == 0:
+                mismatched.append(f"{name_of(rows[idx[0]])} <{address}>")
+            continue
+        best = max(scores.values())
+        owners = [i for i, sc in scores.items() if sc == best and sc > 0]
+        keep = owners[0] if len(owners) == 1 else None
+        for i in idx:
+            if i != keep:
+                out[i] = (f"{address} belongs to {name_of(rows[keep])}" if keep is not None
+                          else f"{address} is shared by {len(idx)} contacts, owner unclear")
+    return {"blank": out, "mismatched": mismatched}
 
 
 # Last path segments that mark an index page, not the article itself.
@@ -181,29 +253,43 @@ def sanitize_rows(
     max_signal_age_days: int | None = 60,
     email_field: str = "email",
     status_field: str = "email_status",
+    name_fields: tuple[str, ...] = ("full_name", "name", "decision_maker", "contact_name"),
     today: datetime | None = None,
 ):
     """Return (clean_rows, report). Deterministic, no LLM. See module docstring."""
     extra_internal_columns = extra_internal_columns or set()
     today = today or datetime.utcnow()
     cutoff = today - timedelta(days=max_signal_age_days) if max_signal_age_days else None
-    report = {"rows_in": len(rows), "rows_dropped_bad_email": 0, "signals_dropped": 0,
+    report = {"rows_in": len(rows), "rows_dropped_bad_email": 0, "emails_blanked": 0,
+              "emails_wrong_person": [], "emails_name_mismatch": [], "signals_dropped": 0,
               "messages_trimmed": 0, "columns_dropped": []}
 
+    wrong = wrong_person_emails(rows, email_field, name_fields)
+    report["emails_name_mismatch"] = wrong["mismatched"]
+
     clean: list[dict] = []
-    for r in rows:
+    for i, r in enumerate(rows):
         r = dict(r)
-        # 1) bad emails
-        if require_email and not email_ok(r.get(status_field, ""), r.get(email_field, ""), email_policy):
-            report["rows_dropped_bad_email"] += 1
-            continue
-        # 2) stale / sourceless signals
+        # 1) an address that is provably someone else's: pull it, keep the contact
+        if i in wrong["blank"]:
+            report["emails_wrong_person"].append(wrong["blank"][i])
+            r[email_field] = ""
+        # 2) bad emails. require_email drops the row; without it the contact stays and only
+        #    the address goes, which is what a deck's LinkedIn-only card needs.
+        if not email_ok(r.get(status_field, ""), r.get(email_field, ""), email_policy):
+            if require_email:
+                report["rows_dropped_bad_email"] += 1
+                continue
+            if str(r.get(email_field, "")).strip():
+                report["emails_blanked"] += 1
+            r[email_field] = ""
+        # 3) stale / sourceless signals
         for sf in signal_fields:
             if sf in r and r[sf] not in (None, ""):
                 kept, dropped = clean_signals(r[sf], cutoff)
                 report["signals_dropped"] += dropped
                 r[sf] = json.dumps(kept, ensure_ascii=False) if isinstance(r[sf], str) else kept
-        # 3) message hygiene: em-dash scrub + length cap
+        # 4) message hygiene: em-dash scrub + length cap
         for mf in message_fields:
             if mf in r and r[mf]:
                 cleaned = clean_text(r[mf])
@@ -217,14 +303,14 @@ def sanitize_rows(
     if not clean:
         return clean, report
 
-    # 4) drop internal/provenance columns
+    # 5) drop internal/provenance columns
     all_cols = list(dict.fromkeys(k for row in clean for k in row.keys()))
     keep_cols = all_cols
     if drop_internal:
         internal = [c for c in all_cols if is_internal_column(c, extra_internal_columns)]
         report["columns_dropped"] += internal
         keep_cols = [c for c in keep_cols if c not in internal]
-    # 5) drop columns empty across ALL kept rows
+    # 6) drop columns empty across ALL kept rows
     if drop_empty:
         empty = [c for c in keep_cols if all(not str(row.get(c, "")).strip() for row in clean)]
         report["columns_dropped"] += empty

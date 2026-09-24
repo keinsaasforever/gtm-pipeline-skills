@@ -330,9 +330,17 @@ it) is sanitized by **`_shared/sanitize.py`** — a deterministic, no-LLM step e
 applies before producing the deliverable:
 
 - **Drop bad emails** — keep only allowed deliverability statuses (default policy `standard`:
-  Deliverable + High-probability + Catch-all; `strict` also drops catch-all). The real
-  anti-"made-up-address" guard is the upstream **domain-identity cross-check** (people-enrichment):
-  a `DELIVERABLE` email on a domain that isn't the target's is a wrong-company hit — drop it.
+  Deliverable + High-probability + Catch-all + Kitt's `valid` and `valid-risky`; `strict` also drops
+  catch-all and `valid-risky`). Kitt's `unknown`, `invalid` and `unverified` are in no policy, so
+  an address the gate rejected or never checked cannot reach a lead. The real anti-"made-up-address"
+  guard is the upstream **domain-identity cross-check** (people-enrichment): a `DELIVERABLE` email
+  on a domain that isn't the target's is a wrong-company hit — drop it.
+- **Pull wrong-person addresses** — one mailbox on two contacts means at most one owner, so
+  `sanitize.py` keeps it on the contact whose name the local part matches and blanks it on the
+  others (`emails_wrong_person`); when no name matches, all of them lose it. A *lone* address whose
+  local part matches no part of the name is only reported (`emails_name_mismatch`) — check those by
+  hand. Role mailboxes (`info@`, `kontakt@`, `sales@`…) are exempt. **A blanked address never drops
+  the contact** when `require_email=False`: the row ships with LinkedIn only.
 - **Drop stale/sourceless signals** — per Signal Quality above.
 - **Strip provenance** — provider/source labels (`source`, `fullenrich_finder`, `ccv_directory`),
   internal status codes (`email_status`, `HIGH_PROBABILITY`), and technical columns never ship.
@@ -373,6 +381,7 @@ source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
 
 | Variable | Service | Used by |
 |----------|---------|---------|
+| `KITT_API_KEY` | Kitt (trykitt.ai) | people-enrichment (first email finder + the verifier gate), demo, demo-headless |
 | `PIPE0_API_KEY` | Pipe0 | people-search, people-enrichment, company-enrichment |
 | `BETTERCONTACT_API_KEY` | BetterContact | people-search, people-enrichment |
 | `FULLENRICH_API_KEY` | FullEnrich | company-search, people-search, people-enrichment |
@@ -482,7 +491,9 @@ Several providers have similarly-named products. Be explicit about which is mean
 
 | Product | Skill | Purpose | Notes |
 |---------|-------|---------|-------|
-| **PhantomBuster Email Finder** | people-enrichment | **Priority-1 email enrichment** | PB's built-in email waterfall (BetterContact et al.) via the "Email Finder" phantom. Input staged from a Google Sheet by `_shared/pb_email_finder.py`. **Runs first; if N/A (no PB key / staging sheet / Google OAuth → exit 3), skip to FullEnrich.** |
+| **Kitt find_email** | people-enrichment | **Priority-1 email enrichment** | Live finder: full name + company domain, $0.005 per address found, misses free. Its hits come back verified. Engine: `_shared/kitt.py` |
+| **Kitt verify_email** | people-enrichment | **The verifier gate** | Checks every *other* provider's address before it is kept. `valid` / `valid-risky` / `unknown` / `invalid`; a demo ships `valid` and `valid-risky`. Same engine, `--no-find` |
+| **PhantomBuster Email Finder** | people-enrichment | **Priority-1 email enrichment** | PB's built-in email waterfall (BetterContact et al.) via the "Email Finder" phantom. Input staged from a Google Sheet by `_shared/pb_email_finder.py`. **Runs after Kitt, on its misses; if N/A (no PB key / staging sheet / Google OAuth → exit 3), skip to FullEnrich.** Grades nothing, so every PB address goes through the Kitt gate. |
 | **BetterContact Lead Finder** | people-search | Synchronous people discovery API | Returns contacts by company + role filters |
 | **BetterContact async enrichment** | people-enrichment | Async email/phone enrichment | Slow due to multi-provider waterfall. Email hit rate is low (~14% in our tests) — **prefer FullEnrich for email**. Acceptable for phone if user has patience. |
 | **FullEnrich Company Search** | company-search | Firmographic company discovery (`POST /v2/company/search`) | Default company source. 0.25 cr per company returned. Its `id` joins exactly to the Finder's `current_company_ids`. Script: `_shared/fe_search.py` |

@@ -14,6 +14,11 @@ genuinely ambiguous, and the operator can override any default. For an **unatten
 
 **Read `~/.claude/skills/gtm-pipeline/_shared/conventions.md` before executing.**
 
+**Reference scripts — use them, don't rewrite them:** `references/` holds the scripts every demo run
+used to hand-write (BetterContact search, FullEnrich fallback, draft checker, output builder, deck
+renderer, deck QA), and `references/README.md` holds the data contract they share (`messages.json`,
+`context/deck.json`). Run them from `{client-slug}-gtm/`.
+
 ---
 
 ## When to Use
@@ -33,12 +38,12 @@ genuinely ambiguous, and the operator can override any default. For an **unatten
   hand-off ("this is a sample of a list we can extend").
 - Message generation is optional but recommended
 - **Signal search is opt-in** — off by default. Enable via `--with-signals` flag or explicit user request. See Step 5.5.
-- **Budget: 70 credits + $3 of web research per run, hard.** This covers everything: finder rows,
-  email enrichment, signal/web calls. Track the spend in `run_log.md` as you go (each provider
+- **Budget: 70 credits + USD 3 of web research per run, hard.** This covers everything: finder rows,
+  email enrichment, signal/web calls. **PhantomBuster runs don't count** (flat plan, Paul 2026-09-24). Track the spend in `run_log.md` as you go (each provider
   returns its own credit count — read it, don't estimate). **On reaching the cap the run stops
   buying, ships what it already has, and logs the shortfall.** It never asks for more, and it never
   buys "a few more rows to rank from".
-- **Cost gate:** before the first paid provider call, state the expected spend (finders bill per person returned — BetterContact 0.10, FullEnrich 0.25 — so ~15 people is 1.50 to 3.75 cr; ~10-15 email enrichment credits; signals <$0.50 if enabled; a screening pass multiplies the search by 1 ÷ pass rate, since discarded contacts are billed too). Interactive: confirm with the user first. Headless: log the estimate in `run_log.md` and proceed, never block.
+- **Cost gate:** before the first paid provider call, state the expected spend (finders bill per person returned — BetterContact 0.10, FullEnrich 0.25 — so ~15 people is 1.50 to 3.75 cr; email: Kitt at USD 0.005 per address found and its checks at ~USD 0.0015 each are rounding errors, the fallback provider is the cost — budget ~10-15 email enrichment credits for the contacts Kitt misses; signals <USD 0.50 if enabled; a screening pass multiplies the search by 1 ÷ pass rate, since discarded contacts are billed too). Interactive: confirm with the user first. Headless: log the estimate in `run_log.md` and proceed, never block.
 - **Pull enough, not best.** Buy `target ÷ expected pass rate` rows (≈1.5× with resolved filters),
   then stop. Ranking a large pool down to a small list means paying for every discarded row: the
   Reduzer run bought 311 rows to deliver 30. If the first pull is off-segment, fix the *filters*
@@ -165,8 +170,17 @@ market is empty" when it means "that word is not in the list".
 | Per-company cap | **`limit_per_company`** | none (persona pulls cluster) | none |
 
 Grep the lists, never type a value from memory (`grep -i "construction" _shared/fe_industries.txt`;
-BetterContact's is at https://doc.bettercontact.rocks/api-reference/taxonomies). Write the resolved
-values into `context/icp.md` next to the personas.
+BetterContact's 120 values, its revenue ranges and its known traps are in `_shared/finder_values.md`).
+Write the resolved values into `context/icp.md` next to the personas.
+
+**Map with judgement, then probe.** A segment's words rarely exist verbatim in a list. For each segment,
+pick every value that describes it from **each** finder's list, using what you know about the industry:
+synonyms, parent and child categories, the adjacent values its companies are actually filed under
+(Sphere, 2026-09-24: "Maschinenbau" has no BetterContact value, but FullEnrich has `Machinery
+Manufacturing`, `Industrial Machinery Manufacturing` and `Automation Machinery Manufacturing`). Probe
+each value **alone** at `limit 1` (a BetterContact probe that returns 0 is free) and keep only values
+that return on-segment rows; a value that returns 0 alone is broken, not selective. Only when no finder
+has a fitting value does the segment go to the research route: "Elektrowerkzeuge" exists in no list.
 
 **If no industry value fits the request, or the resolved filters come back slim or off-segment
 (<½ the target, or most rows in the wrong segment), stop filtering and switch to broad research**
@@ -189,8 +203,10 @@ This is the emmy/nextbike route, and it is cheap because the company list is fre
 1. Enumerate a **finite company pool** from public sources: an industry ranking, a trade-association
    member list, a public register, a directory, a Wikipedia list, or a client-supplied CSV. Cap it
    at ~2× the target companies. Verify each domain.
-2. Then one people search **per company** (`limit` 5–8, tier-1 titles, no person-location filter),
-   and pick one contact per company.
+2. Then one people search over the pool (`limit` 5–8 per company, tier-1 titles), and pick one
+   contact per company. BetterContact takes the whole pool in one call: `company: {include: [domains]}`
+   + `lead_location` + titles + `limit_per_company: 3` (Sphere: 44 domains → 115 people at 36
+   companies, billed 0.0). A group brand needs its own domain (`bosch-pt.com`, `stihl.de`).
    Precedent: emmy 18 named brands → 16 candidates → 12 delivered; nextbike 21 clinics from a public
    hospital list → 47 candidates → 18 delivered.
 
@@ -240,12 +256,44 @@ For demos: use a relaxed hard-reject threshold (allow tiers 1–5 to pass), prio
 
 Run **people-enrichment** on the filtered contacts. **Demo mode: email only, no phone.**
 
-Recommended flow (email waterfall — same hierarchy as people-enrichment):
-1. **PhantomBuster Email Finder** — all contacts, **if available**. PB's built-in email waterfall (BetterContact et al.); needs `PHANTOMBUSTER_API_KEY` + Google OAuth (the engine creates a fresh staging sheet per run automatically). See people-enrichment **Provider 0**. **If N/A (engine exits 3), skip it** and start at FullEnrich — a ~10-contact demo must never block on PB.
-2. FullEnrich v2 (email) — contacts still missing an email after step 1
-3. Pipe0 waterfall — for remaining misses only
+**Kitt is first, and a demo ships verified addresses or none** — never a second provider's guess:
 
-Every kept email must pass the **domain-identity cross-check** (the engine drops wrong-company hits automatically). On a ~10-contact demo, PB is a single async batch (~3–6 min).
+1. **Kitt** — every contact (`_shared/kitt.py`, needs `KITT_API_KEY`). Full name + company domain,
+   USD 0.005 per address found, misses free. Its own finds come back verified.
+2. **One other provider, for Kitt's misses only** — PhantomBuster Email Finder if available
+   (people-enrichment **Provider 0**; exit 3 = N/A, skip it), else FullEnrich v2. **Stop there.**
+   Walking an address through Pipe0 and BC is a pipeline thing; a demo does not buy the fourth try.
+3. **The Kitt gate** — every address from step 2 goes back through `kitt.py`, which keeps `valid`
+   and `valid-risky`. Risky is Kitt's catch-all verdict: the server accepts every address, so the
+   mailbox can't be confirmed, and most DACH corporates run one (Paul, 2026-09-24: ship them).
+   `unknown`, `invalid`, and an address Kitt never answered for lose the address: the verdict lands
+   in `email_status` and `sanitize.py`'s `standard` policy passes `VALID` and `VALID_RISKY` only.
+   Kitt's own finds are not re-checked. **A `valid-risky` find is a pattern guess** (the server
+   accepts anything), so check it against the company's documented format (search
+   "`<domain>` email format"): when Kitt's guess contradicts a format that covers ≥ 90 % of the
+   company's addresses, use that format for the person and re-check it with `kitt.py --no-find`.
+   Sphere, 2026-09-24: Kitt gave `lastf@` and then `firstlast@` for the same person at
+   rohde-schwarz.com, where 98 % of addresses are `first.last@`.
+
+```bash
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+export $(grep -E '^KITT_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+python3 ~/.claude/skills/gtm-pipeline/_shared/kitt.py \
+  --input csv/intermediate/contacts_filtered.csv --output csv/intermediate/contacts_kitt.csv
+# … then PB or FE on the rows kitt.py left without an email, then the gate: …
+python3 ~/.claude/skills/gtm-pipeline/_shared/kitt.py --no-find \
+  --input csv/intermediate/contacts_pb_email.csv --output csv/intermediate/contacts_enriched.csv
+```
+
+**A rejected address never removes the contact.** Two ways out, in order:
+1. **A spare at the same company** — another contact the search already found, whose address came
+   back `valid` or `valid-risky`, takes the slot. Free: that pool is already paid for. Do **not** search for a
+   replacement and do **not** walk to the next provider (Paul, 2026-09-23).
+2. **No spare** — the contact keeps its card with the LinkedIn draft only and the `est-warn`
+   "on request" badge (Step 7b). The company stays in the deck; only the address goes.
+
+Every kept email must also pass the **domain-identity cross-check** (the engine drops wrong-company
+hits automatically). On a ~10-contact demo, PB is a single async batch (~3–6 min).
 
 Additional enrichment for message personalization (if available):
 - LinkedIn headline and summary (from LinkedIn scrape via PhantomBuster)
@@ -273,7 +321,7 @@ hook (the default when it's on), it stays here, after enrichment.
 - The client's offering depends on timing signals to make sense (e.g. "we help post-Series-A companies scale ops")
 - A `--with-signals` flag is passed to the demo invocation
 
-**Cost note:** adds ~$0.01–0.05 per unique company (web search + scoring). On a 10-contact demo, that's typically 5–10 unique companies, so <$0.50.
+**Cost note:** adds ~USD 0.01–0.05 per unique company (web search + scoring). On a 10-contact demo, that's typically 5–10 unique companies, so <USD 0.50.
 
 ### Required inputs for signal-search
 
@@ -380,6 +428,13 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 
 **If Step 5.5 ran:** for each contact, prefer the highest-scored signal from `company_scored_signals` as the hook over generic LinkedIn-post references. A score >= 70 signal anchored in real recent news is the strongest hook the demo can produce.
 
+**Which signals hook a message.** Only strong ones: an acquisition, funding, a new site or
+development centre, a capacity expansion, a new programme. A **product launch counts only when it
+creates the very need the offering serves** (Sphere: STIHL's new battery platform for a
+battery-validation AI; a new aircraft seat entering certification for requirements automation), never
+because a recent news hook is wanted (a routine new tool generation stays ICP-fit). Record the
+reason next to the score.
+
 **Hook sources — exactly two.** (1) A **kept signal**: dated inside the window, citing its article.
 (2) A **timeless fit fact**: what the company does, where, for whom and at what size, from its own
 site, plus the person's role. A dated event (a project, contract, acquisition, report, sale, post)
@@ -396,6 +451,8 @@ deck-side fix then had to strip out.
 3. Review against quality checklist above
 4. If issues found, refine the system prompt and regenerate
 5. **Only batch generate once quality is approved**
+6. Write the drafts to `csv/intermediate/messages.json` (contract: `references/README.md`) and run
+   `references/check_messages.py` until it prints CLEAN
 
 ### System Prompt Template (key sections)
 
@@ -419,11 +476,16 @@ Before building anything lead-facing, run the shared sanitizer so the recurring 
 import sys, os
 sys.path.insert(0, os.path.expanduser("~/.claude/skills/gtm-pipeline/_shared"))
 from sanitize import sanitize_rows
-clean, report = sanitize_rows(rows, email_policy="standard", max_signal_age_days=60)
-# report → rows_dropped_bad_email, signals_dropped, columns_dropped, messages_trimmed
+clean, report = sanitize_rows(rows, email_policy="standard", max_signal_age_days=60,
+                              require_email=False)   # keep the contact, drop only the address
+# report → emails_blanked, emails_wrong_person, emails_name_mismatch,
+#          rows_dropped_bad_email, signals_dropped, columns_dropped, messages_trimmed
 ```
 
-It drops bad-status emails (default keeps Deliverable/High-prob/Catch-all), strips provider/source
+**`require_email=False` is what makes a demo card survive a failed check** — the address goes,
+the contact stays, and Step 7b gives it the `est-warn` badge and the LinkedIn draft only.
+
+It drops bad-status emails (default keeps Deliverable/High-prob/Catch-all/Kitt `valid` + `valid-risky`), strips provider/source
 labels + internal status codes, removes all-empty columns, drops stale/sourceless signals, and
 enforces message length + em-dash rules. See `conventions.md` → Output Sanitization. Write the
 result to `csv/output/`.
@@ -431,9 +493,10 @@ result to `csv/output/`.
 **Step 7b — Deliverables** (build from the sanitized `csv/output/` only):
 1. **CSV** at `csv/output/contacts_enriched.csv`: lead data + generated messages (post-sanitize).
 2. **Card deck** (HTML): the parameterized keinsaas-style deck — one card per contact with
-   signal (source + date), decision-maker, and ready message. **Start from the canonical
-   template `deck_template.html`** (in this skill's directory) and fill every `{{TOKEN}}`; do
-   not hand-copy a prior client's deck or restyle from scratch. Drive it from the sanitized CSV +
+   signal (source + date), decision-maker, and ready message. **Render it with
+   `references/build_output.py` then `references/render_deck.py <out.html>`**, which fill the canonical
+   `deck_template.html` from `context/deck.json`; do not hand-copy a prior client's deck or restyle
+   from scratch. Drive it from the sanitized CSV +
    `context/` files. Assemble with the **sonnet** model. Deck anatomy (all baked into the template):
    - **Header + hero + 4 stat tiles**, then segment blocks. Group contacts into **Signal-first**
      (fresh, sourced buying signal ≤ 60d → `sig-hot` red signal box with a live `.sigsrc` source
@@ -442,9 +505,13 @@ result to `csv/output/`.
      `.approach` blocks to frame each group; `.seg-meta` for counts.
    - Each card = collapsible `<details class="lead">`: favicon, company + domain, attribute tags
      (`tag-sig`/`tag-icp` + language `tag-lang`), the signal/fit box, the decision-maker with
-     LinkedIn + email and a deliverability badge (`est-ok` = verified email, `est-warn`
-     "on request" when no email — in that case **drop the email draft, keep only the LinkedIn
-     draft**), and the message draft (email subject + body, then LinkedIn) with an A/B `cta-chip`.
+     LinkedIn + email and a deliverability badge, and the message draft (email subject + body,
+     then LinkedIn) with an A/B `cta-chip`. **The badge states a fact, not a hope:** `est-ok`
+     ("verified" / "verifiziert") where `email_status` is Kitt's `valid`, `est-ok` ("likely valid" /
+     "wahrscheinlich gültig") where it is `valid-risky`; `est-warn` ("on request" / "auf Anfrage")
+     for every card with no address — Kitt found none, or the one it checked came back unknown,
+     invalid or unchecked (Step 5). On an `est-warn` card
+     **drop the email draft and keep only the LinkedIn draft**.
    - **List bar** carries a **Download-CSV button** (`.dl`) beside the Expand-all toggle; the
      footer carries a **big CTA button** (`.cta-btn`) linking to **keinsaas's** booking page, always
      (the deck is a keinsaas pitch to the prospect, never the prospect's own demo link):
@@ -468,12 +535,19 @@ result to `csv/output/`.
 3. **Google Sheet** (optional): formatted for review.
 
 **Step 7c — Programmatic self-QA** (browser QA is often unavailable — never depend on a screenshot):
+`references/qa_deck.py <out.html>` runs every check below and exits 1 on a failure.
 assert card count == contact count; **zero unfilled `{{TOKEN}}` placeholders remain** in the HTML;
 every signal card has a live source link + date; **zero empty fields / placeholders**; zero
 em-dashes; one email + one LinkedIn draft per verified-email card (LinkedIn-only for `est-warn`
-cards) within char caps. **No third-party tool / data-provider name** appears in the rendered text
+cards) within char caps. **Every address in the deck carries an `est-ok` badge and an
+`email_status` of `valid` or `valid-risky` in the CSV it was built from** — an address with any other verdict, or a
+badge on a card with no address, is a build bug, not a styling choice. **No third-party tool / data-provider name** appears in the rendered text
 (grep the visible copy for enrichment/search/scrape vendor names — none allowed; the lead's own
-LinkedIn link is the only exception). **German decks use Du-form** — flag any `Sie/Ihr/Ihnen`
+LinkedIn link is the only exception). **Read the sanitize report before shipping:** an address in
+`emails_name_mismatch` is a wrong-person suspect the code would not drop on its own — confirm or
+pull it by hand, and check that nothing in `emails_wrong_person` still appears in the deck. **No
+address may appear on two cards** (two contacts sharing a mailbox means one of them gets a stranger's
+mail, BOC24 and Black Diamond in the Neocom demo). **German decks use Du-form** — flag any `Sie/Ihr/Ihnen`
 formal-address forms in the deck's own copy (the drafts follow the message prompt's register).
 **ICP-fit cards carry no dates:** the fit box and both drafts of every card without a kept signal
 contain no full date (`2026-07-07`, `07.07.2026`, `7. Juli 2026`, `July 7, 2026`) and no month

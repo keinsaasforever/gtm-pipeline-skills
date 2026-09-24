@@ -622,25 +622,71 @@ _MONTHS = {
 _MON = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _DATE_PATTERNS = (  # (pattern, groups -> (year, month, day))
     (re.compile(r"\b(20\d\d)-(\d\d)-(\d\d)"), lambda g: (g[0], g[1], g[2])),                       # 2026-07-29
-    (re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(20\d\d)\b"), lambda g: (g[2], g[1], g[0])),              # 29.07.2026
-    (re.compile(rf"\b(\d{{1,2}})\.?\s+({_MON})\.?\s+(20\d\d)\b", re.I),
+    (re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(20\d\d)(?!\d)"), lambda g: (g[2], g[1], g[0])),              # 29.07.2026
+    (re.compile(r"\b(\d{1,2})/(\d{1,2})/(20\d\d)(?!\d)"), lambda g: _slash_date(*map(int, g))),          # 01/09/2025, 09/24/2026
+    (re.compile(rf"\b(\d{{1,2}})\.?\s+({_MON})\.?\s+(20\d\d)(?!\d)", re.I),
      lambda g: (g[2], _MONTHS[g[1].lower()], g[0])),                                                 # 29. Juli 2026
-    (re.compile(rf"\b({_MON})\.?\s+(\d{{1,2}}),?\s+(20\d\d)\b", re.I),
+    (re.compile(rf"\b({_MON})\.?\s+(\d{{1,2}}),?\s+(20\d\d)(?!\d)", re.I),
      lambda g: (g[2], _MONTHS[g[0].lower()], g[1])),                                                 # July 29, 2026
 )
 
 
-def dates_in(text: str) -> list[datetime]:
-    """Every full date (day, month and year) written in the text, in any of the four forms above."""
-    found: list[datetime] = []
+def _slash_date(a: int, b: int, y: int) -> tuple[int, int, int]:
+    """dd/mm/yyyy or mm/dd/yyyy. When both readings are real dates, the later one that is not in
+    the future: TRUMPF's en_US press page prints 09/02/2026 for 2 September (Sphere run,
+    2026-09-24), and reading it as 9 February dropped a real signal. Leaning fresh only keeps an
+    item for the scorer to read; it never drops one."""
+    readings = []
+    for day, month in ((a, b), (b, a)):
+        try:
+            readings.append(datetime(y, month, day))
+        except ValueError:
+            pass
+    now = datetime.utcnow()
+    best = max([r for r in readings if r <= now] or readings)  # no valid reading: ValueError, skipped by the caller
+    return best.year, best.month, best.day
+
+
+def dated_spans(text: str) -> list[tuple[int, datetime]]:
+    """Every full date (day, month and year) written in the text, with its position, in text order."""
+    found: list[tuple[int, datetime]] = []
     for pattern, ymd in _DATE_PATTERNS:
-        for groups in pattern.findall(text or ""):
+        for match in pattern.finditer(text or ""):
             try:
-                y, m, d = ymd(groups)
-                found.append(datetime(int(y), int(m), int(d)))
+                y, m, d = ymd(match.groups())
+                found.append((match.start(), datetime(int(y), int(m), int(d))))
             except (ValueError, KeyError):
                 pass
-    return found
+    return sorted(found, key=lambda span: span[0])
+
+
+def dates_in(text: str) -> list[datetime]:
+    return [d for _, d in dated_spans(text)]
+
+
+def source_date(text: str, headline: str = "") -> datetime | None:
+    """The date the source prints for its own item, not the page's technical stamp.
+
+    A provider's publish_date / publishedTime is often the crawl or rebuild date: HENSOLDT's
+    appointment of Sven Heursch (dated 01/09/2025 on the page) came back as 2026-09-22 on the
+    Sphere run (2026-09-24), and a MULTIVAC item from 2022 as 2026-09-06, because its sidebar
+    lists this week's news above the article. So: a date line right before the headline
+    ("28.07.2026 00:00 COMPACT SERIES"), else the first full date after the headline's first
+    appearance in the text, else the nearest one before it; without the headline in the text,
+    the latest date. Future dates (deadlines, plans) never count. None = the text has no date."""
+    now = datetime.utcnow()
+    spans = [(pos, d) for pos, d in dated_spans(text) if d <= now]
+    if not spans:
+        return None
+    head = re.split(r"\s+[|–—-]\s+", headline or "")[0].strip()[:40]  # drop " | HENSOLDT", " - Lift Journal"
+    at = (text or "").lower().find(head.lower()) if len(head) >= 12 else -1
+    if at < 0:
+        return max(d for _, d in spans)
+    date_line = [d for pos, d in spans if 0 <= at - pos <= 40]
+    if date_line:
+        return date_line[-1]
+    after = [d for pos, d in spans if pos > at]
+    return after[0] if after else spans[-1][1]  # no date after the headline: the nearest one before it
 
 
 def is_fresh(dates: list[datetime], lookback_months: int) -> bool:
@@ -649,15 +695,16 @@ def is_fresh(dates: list[datetime], lookback_months: int) -> bool:
 
 
 def filter_search_results_by_freshness(results: list[dict], lookback_months: int) -> tuple[list[dict], dict]:
-    """Keep a web-search result only if it carries a date inside the window: the provider's
-    publish_date when it has one, else any full date in the title or excerpts. Undated and
-    stale-only results are dropped. A fresh page can still re-report an older event; that call
-    is the scorer's (the event date counts, SKILL.md rubric)."""
+    """Keep a web-search result only if its date is inside the window: the date the source
+    itself prints (`source_date` over the excerpts, then the title), else the provider's
+    publish_date. Undated and stale results are dropped. A fresh article can still re-report an
+    older event; that call is the scorer's (the event date counts, SKILL.md rubric)."""
     kept: list[dict] = []
     dropped = {"stale": 0, "undated": 0}
     for r in results:
+        own = source_date(" ".join(r.get("excerpts") or []), r.get("title") or "") or source_date(r.get("title") or "")
         pub = r.get("publish_date")
-        dates = dates_in(str(pub)) if pub else dates_in(" ".join([r.get("title") or "", *(r.get("excerpts") or [])]))
+        dates = [own] if own else dates_in(str(pub)) if pub else []
         if is_fresh(dates, lookback_months):
             kept.append(r)
         else:
@@ -666,15 +713,16 @@ def filter_search_results_by_freshness(results: list[dict], lookback_months: int
 
 
 def filter_crawl_pages_by_freshness(pages: list[dict], lookback_months: int) -> list[dict]:
-    """Same rule for crawled pages: the page's publication metadata, else any full date in the
-    markdown. Until 2026-09-21 this kept stale and undated pages ("let the LLM filter"), so the
+    """Same rule for crawled pages: the date the page prints for itself, else its publication
+    metadata. Until 2026-09-21 this kept stale and undated pages ("let the LLM filter"), so the
     second freshness gate filtered nothing. `last_modified` is not a publication date: a site
     rebuild stamps every old page with it."""
     kept: list[dict] = []
     for p in pages:
         meta = p.get("metadata") or {}
+        own = source_date(p.get("markdown") or "", meta.get("title") or meta.get("og:title") or "")
         stamp = meta.get("article:published_time") or meta.get("published_time") or meta.get("publishedTime") or meta.get("date")
-        dates = dates_in(str(stamp)) if stamp else dates_in(p.get("markdown") or "")
+        dates = [own] if own else dates_in(str(stamp)) if stamp else []
         if is_fresh(dates, lookback_months):
             kept.append(p)
     return kept

@@ -16,6 +16,27 @@ de = lambda d: d.strftime("%d.%m.%Y")
 assert [d.date() for d in dates_in("am 29.07.2026, 29. Juli 2026, July 29, 2026 und 2026-07-29")] == [datetime(2026, 7, 29).date()] * 4
 assert dates_in("Sept. 3, 2026") == [datetime(2026, 9, 3)] and dates_in("3. März 2026") == [datetime(2026, 3, 3)]
 assert dates_in("bis 2040, seit 1996, Juli 2028") == []  # a year or a month alone is not a date
+assert dates_in("09/24/2026") == [datetime(2026, 9, 24)]                      # US form: 24 can't be a month
+assert dates_in("01/09/2025") == [datetime(2025, 9, 1)]                       # ambiguous, both past: the later reading
+assert dates_in("09/02/2026") == [datetime(2026, 9, 2)]                       # TRUMPF en_US: 2 Sept, not 9 Feb
+assert dates_in("07.09.2026Diehl Aviation") == [datetime(2026, 9, 7)]         # no space after the year
+
+# The source's own date beats the provider's stamp (Sphere run, 2026-09-24).
+old_story = {"url": "hensoldt", "title": "HENSOLDT appoints Sven Heursch as Head of Digitalisation | HENSOLDT",
+             "publish_date": iso(fresh),  # the crawl date, not the article's
+             "excerpts": ["# HENSOLDT appoints Sven Heursch as Head of Digitalisation 01/09/2025 Picture: HENSOLDT",
+                          f"More news: Air {fresh:%d/%m/%Y} HENSOLDT gets development contract"]}
+sidebar = {"url": "multivac", "title": "Broader basis with new four-man team at the top",
+           "publish_date": iso(fresh),
+           "excerpts": [f"Breaking news Posted on: {fresh:%B %d, %Y} ...... ...... ...... ...... ...... ...... ...... "
+                        "...... ...... ...... ...... Broader basis with new four-man team at the top. From 1 January 2023 on"]}
+date_line = {"url": "einhell", "title": "COMPACT SERIES: The Next Generation",
+             "excerpts": [f"Go back {de(fresh)} 00:00 COMPACT SERIES: The Next Generation. Related: {de(stale)} story"]}
+fresh_text = {"url": "fresh-text", "title": "ACME opens a plant", "publish_date": iso(stale),
+              "excerpts": [f"ACME opens a plant. Pressemitteilung vom {de(fresh)}"]}
+no_text_date = {"url": "no-text-date", "title": "ACME opens a plant", "publish_date": iso(fresh), "excerpts": ["ACME opens a plant."]}
+kept, dropped = filter_search_results_by_freshness([old_story, sidebar, date_line, fresh_text, no_text_date], 2)
+assert [r["url"] for r in kept] == ["einhell", "fresh-text", "no-text-date"] and dropped == {"stale": 2, "undated": 0}, (kept, dropped)
 
 results = [
     {"url": "a", "publish_date": iso(fresh)},                          # dated by the provider, fresh

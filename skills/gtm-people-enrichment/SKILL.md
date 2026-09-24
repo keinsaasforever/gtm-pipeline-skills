@@ -1,6 +1,6 @@
 ---
 name: gtm-pipeline:people-enrichment
-description: Enrich contacts with work email, phone number, and/or LinkedIn URL. Use when you have a contact list that needs enrichment before outreach. Email waterfall (PhantomBuster Email Finder → FullEnrich → Pipe0), phone (FullEnrich → Pipe0 → BetterContact). Enforces demo mode (email only, no phone). Also triggers on "enrich contacts", "find emails for", "get phone numbers for".
+description: Enrich contacts with work email, phone number, and/or LinkedIn URL. Use when you have a contact list that needs enrichment before outreach. Email waterfall (Kitt → PhantomBuster Email Finder → FullEnrich → Pipe0, with Kitt verifying every other provider's find), phone (FullEnrich → Pipe0 → BetterContact). Enforces demo mode (email only, no phone). Also triggers on "enrich contacts", "find emails for", "get phone numbers for".
 ---
 
 # People Enrichment
@@ -42,12 +42,13 @@ When invoked from the demo flow: **email only, skip all phone providers entirely
 
 | Priority | Provider | Hit Rate | Cost | Speed | Notes |
 |----------|----------|----------|------|-------|-------|
-| **1st** | **PhantomBuster Email Finder** | account-dependent | ~1 cr/email found | ~3–6 min/batch (async container) | **Run first if available.** PB's built-in email waterfall (BetterContact et al.). Needs a Google Sheet to stage input + `PHANTOMBUSTER_API_KEY`. **If N/A, skip — fall through to FullEnrich.** See Provider 0. |
-| 2nd | **FullEnrich v2** | 80% (SA), 83% (DACH) | 0.8 cr/contact | instant | Strong direct-API fallback; email-first among the JSON providers |
-| 3rd | **Pipe0 waterfall** | 60% (SA), 83% (DACH) | 1.0–3.5 cr/contact | ~3 min/20 contacts | Solid backup |
-| 4th | **BetterContact** (email-only) | ~60% test / **14% production SA** | 0.35 cr/contact | 30–90 min | Not recommended — slow, unreliable production |
+| **1st** | **Kitt** (trykitt.ai) | 24/30 in the keinsaas head-to-head | USD 0.005 per address found, misses free | seconds (realtime, 15 in parallel) | **First in every chain, and the verifier gate on every other provider's find.** Name + company domain, nothing else. Its own finds come back verified. Engine: `_shared/kitt.py`, key `KITT_API_KEY`. See **Provider K**. |
+| 2nd | **PhantomBuster Email Finder** | account-dependent | ~1 cr/email found | ~3–6 min/batch (async container) | **Run first if available.** PB's built-in email waterfall (BetterContact et al.). Needs a Google Sheet to stage input + `PHANTOMBUSTER_API_KEY`. **If N/A, skip — fall through to FullEnrich.** See Provider 0. |
+| 3rd | **FullEnrich v2** | 80% (SA), 83% (DACH) | 0.8 cr/contact | instant | Strong direct-API fallback; email-first among the JSON providers |
+| 4th | **Pipe0 waterfall** | 60% (SA), 83% (DACH) | 1.0–3.5 cr/contact | ~3 min/20 contacts | Solid backup |
+| 5th | **BetterContact** (email-only) | ~60% test / **14% production SA** | 0.35 cr/contact | 30–90 min | Not recommended — slow, unreliable production |
 
-**Recommended flow (email waterfall):** **PB Email Finder (Provider 0, if available) → FE Enrich (v2) → Pipe0 waterfall → BC (last resort).** PB runs first because it wraps a multi-provider waterfall in one call; when PB is **N/A** (no `PHANTOMBUSTER_API_KEY`, no staging sheet, or no Google OAuth: the engine exits 3) simply **skip it** and start at FE. FE is **email-first** among the direct-API providers; BC drops to last for email because its async email hit rate is low (~14% production SA). **Max 2 attempts per source**, then fall through. The order follows the email priority table above (for email, BC ranks below Pipe0, unlike the finder cadence in conventions). Every provider's output, PB included, must pass the **Domain-Identity Cross-Check** below before it ships.
+**Recommended flow (email waterfall):** **Kitt (Provider K) → PB Email Finder (Provider 0, if available) → FE Enrich (v2) → Pipe0 waterfall → BC (last resort)**, with **every non-Kitt address checked by Kitt** before it is kept (Provider K → The verifier gate). **A demo stops after the second provider** and ships only `valid` addresses — see gtm-demo Step 5. PB runs first because it wraps a multi-provider waterfall in one call; when PB is **N/A** (no `PHANTOMBUSTER_API_KEY`, no staging sheet, or no Google OAuth: the engine exits 3) simply **skip it** and start at FE. FE is **email-first** among the direct-API providers; BC drops to last for email because its async email hit rate is low (~14% production SA). **Max 2 attempts per source**, then fall through. The order follows the email priority table above (for email, BC ranks below Pipe0, unlike the finder cadence in conventions). Every provider's output, PB included, must pass the **Domain-Identity Cross-Check** below before it ships.
 
 ### Domain-Identity Cross-Check (critical)
 
@@ -59,6 +60,12 @@ Deliverability status is **blind to identity.** Providers return `DELIVERABLE` e
 - **Drop identity mismatches** even when status is `DELIVERABLE`.
 
 This is the real anti-"made-up-address" guard; the `sanitize.py` deliverability filter (below) is only the last net.
+
+**It checks the company, not the person.** A provider that cannot resolve someone often returns a
+colleague's address at the right domain: right company, wrong human, and it verifies perfectly
+because the mailbox is real. `sanitize.py`'s `wrong_person_emails` catches the conclusive case (one
+address on two contacts) and reports the rest in `emails_name_mismatch`. Read that list before any
+address ships.
 
 ### Phone
 
@@ -122,6 +129,74 @@ clean, report = sanitize_rows(rows, email_policy="standard")  # "strict" also dr
 ```
 - **Deliverability policy** is applied by `sanitize.py` via `email_policy`: default `standard` keeps DELIVERABLE + HIGH_PROBABILITY + CATCH_ALL and drops UNKNOWN/RISKY/invalid; `strict` additionally drops catch-all
 - Write the sanitized rows to `csv/output/contacts_enriched.csv`
+
+---
+
+## Provider K: Kitt (Email — Priority 1, and the verifier gate)
+
+A live finder plus verifier, no database behind it: it builds the likely addresses from the name and
+the domain and SMTP-checks them, so **a Kitt hit is already verified** and never goes through the
+gate again. Same vendor and the same two endpoints the live dashboard chain uses
+(`scaleway-jobs/_shared/enrich_providers.py`, `handoff/KITT_EMAIL_PLAN.md`).
+
+**Endpoints:** `POST https://api.trykitt.ai/job/find_email` · `POST .../job/verify_email`
+**Auth:** header `x-api-key: $KITT_API_KEY` (plain `requests` is fine — Kitt is not Cloudflare-fronted)
+**Find body:** `{"fullName": "Jane Doe", "domain": "acme.de", "realtime": true, "customData": "<row id>"}`
+**Verify body:** `{"email": "jane@acme.de", "realtime": true}`
+
+**Input is the full name plus the company domain, and nothing else** — 24 of 30 were found that way
+in the head-to-head. The LinkedIn URL is optional; leave it out (data minimisation). Because the
+domain is an input, a Kitt find cannot be a wrong-company hit, but run the domain-identity
+cross-check on every *other* provider's find as before.
+
+### The verifier gate
+
+Every address another provider found is checked before it is kept. Four verdicts:
+
+| Verdict | Pipeline run | Demo run |
+|---|---|---|
+| `valid` | keep | keep, badge "verified" |
+| `valid-risky` | keep, store the verdict | keep (catch-all domain), badge "likely valid" |
+| `unknown` | keep, store the verdict | drop the address |
+| `invalid` | walk to the next provider; if nothing better, the lane closes | drop the address, **no walk** |
+| no verdict (error, timeout, throttle, no key) | fail **open**: keep it unverified | keep it as `unverified`, which no sanitize policy ships |
+
+The verdict is written to `email_status`, which is what `sanitize.py` filters on: `standard` passes
+`VALID` and `VALID_RISKY` and drops `UNKNOWN` / `INVALID` / `UNVERIFIED`. Losing the address never
+deletes the contact — it ships with LinkedIn only and the deck's `est-warn` badge.
+
+### Run
+
+```bash
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+export $(grep -E '^KITT_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+python3 ~/.claude/skills/gtm-pipeline/_shared/kitt.py \
+  --input  csv/intermediate/contacts_filtered.csv \
+  --output csv/intermediate/contacts_kitt.csv
+```
+
+Finds an address for every row that has none, then checks every address that came from another
+provider. `--no-find` checks only (use it for the gate pass after PB/FE/Pipe0); `--keep-rejected`
+leaves a rejected address in the column for inspection (it still never ships — the verdict does
+that). Column names are flags: `--name-col` (falls back to `first_name` + `last_name`),
+`--domain-col`, `--email-col`, `--status-col`, `--source-col`. Every rejected row is printed with
+its verdict, so a run can be reported before anything is removed from a deck.
+
+### Response traps (all verified against the live chain)
+
+- **A miss is HTTP 200** with the *string* `"no-results-found"` in `email`, not a null — test for `@`.
+- **HTTP 402 is rate limit *or* out of funds** — only the body tells them apart. Out of funds (and
+  401) stops every call in the run; a rate limit backs off and retries three times.
+- **HTTP 418 is the free tier's throttle** ("The free tier API is busy right now"). The current key
+  is free-tier, so a large batch will see these; the engine backs off, then gives up on that
+  address and marks it `unverified` rather than holding the run.
+- Per-call timeout 180 s, 15 calls in parallel, whole stage capped by `KITT_STAGE_TIMEOUT_S`
+  (default 600 s).
+
+### Cost
+
+USD 0.005 per address found, misses free; checks ~USD 0.0015 each. In the dashboard a Kitt find bills the
+client 0.5 credits and checks bill nothing — a demo's whole Kitt spend is cents.
 
 ---
 
