@@ -25,10 +25,10 @@ differs where a decision could be asked about. (See `conventions.md` → Model R
 # positional flags
 ~/.claude/skills/gtm-pipeline/_shared/deploy/run_demo.sh \
   --prompt "We sell warehouse automation to mid-size 3PLs in DACH" \
-  --requester-email "ops@acme.com" --with-signals --max-contacts 10
+  --requester-email "ops@acme.com"
 
 # or JSON on stdin (from a webhook body)
-echo '{"prompt":"…","requester_email":"ops@acme.com","with_signals":true,"max_contacts":10}' \
+echo '{"prompt":"…","requester_email":"ops@acme.com","segments":["3PLs","retailers"]}' \
   | ~/.claude/skills/gtm-pipeline/_shared/deploy/run_demo.sh --json
 ```
 
@@ -37,18 +37,17 @@ echo '{"prompt":"…","requester_email":"ops@acme.com","with_signals":true,"max_
 |-------|--------|-------|
 | `prompt` (required) | form free-text | the offering + target audience |
 | `requester_email` | form | domain auto-resolved in Step 1 to establish what they sell |
-| `with_signals` | form/config | enables the buying-intent pass (pricier, sharper) |
-| `max_contacts` | config | default 10 |
+| `with_signals` | form/config | default on; `false` / `--no-signals` turns the buying-intent pass off |
+| `max_contacts` | config | default: 10 per segment × 2 segments; the skill clamps it to 30 |
+| `segments` | form/config | default: the customer groups the prompt names (`--segments "a; b"` on the CLI) |
+
+Leave a field out and the skill's own default applies; the runner forwards only what you set.
 
 ### Output contract — `{client-slug}-gtm/result.json`
-```json
-{ "status": "ok", "client_slug": "acme",
-  "contacts": 10, "with_signals": true,
-  "deck_path": "csv/output/acme_demo_deck.html",
-  "csv_path": "csv/output/contacts_enriched.csv",
-  "assumptions": ["Interpreted 'ops leaders' as Head of Operations / COO"],
-  "sanitize_report": { "rows_dropped_bad_email": 2, "signals_dropped": 3, "columns_dropped": ["source"] } }
-```
+The shape lives in one place: `gtm-demo-headless/SKILL.md` → **Output contract** (`status`,
+`segments`, `contacts`, `with_signal`, `with_email`, `spend`, `shortfalls`, …). `status: "partial"`
+is a normal outcome, with the reason in `shortfalls`.
+
 The runner `exec`s `claude -p`; the skill prints the absolute path to `result.json` as its last
 line. Your webhook layer reads that file.
 
