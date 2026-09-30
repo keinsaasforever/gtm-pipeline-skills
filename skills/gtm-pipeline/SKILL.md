@@ -45,7 +45,8 @@ the companies, so a scoring requirement alone does not justify buying companies 
   whose company fails. Cheapest at one contact per company.
 - **Company-First** when you need **≥2 contacts per company** (see the cost rule), when the account
   list is a deliverable or a gate the client reviews, or when discovery is company-shaped anyway
-  (client CSV, directory, Sales Navigator, FindAll).
+  (client CSV, directory, Sales Navigator, FindAll). A public list (hospitals, association members,
+  exhibitors, a ranking) comes free: company-search → *From a directory or open database*.
 - **Signal-First** only when the signal *is* the way to find companies: mandatory, and no finder
   filter covers it (funding and hiring are filters, so they are not Signal-First).
 
@@ -239,7 +240,7 @@ Signal-search runs `~/.claude/skills/gtm-signal-search/signal_search.py`. Univer
 
 Before invoking signal-search:
 1. Confirm all three files exist; collect any missing pieces from the user. If `signal_criteria.md` is thin, **help the user construct it** (include + exclude + tuning params like max-age and result count) — see the signal-search skill's Step 2 for the interview.
-2. Enable `--parallel-enrichment` only when structured fields matter for this client. Firecrawl needs no decision: it is the fallback (signal-search Step 5c) for the companies web search leaves without a signal.
+2. Enable `--parallel-enrichment` only when structured fields matter for this client. The site search needs no decision: it is the fallback (signal-search Step 5c, `--site-search tinyfish` by default; `firecrawl` / `tavily` for comparisons) for the companies web search leaves without a signal.
 
 No n8n workflow edits are required for signal-search anymore — the script reads everything from `context/` at runtime. Keys are injected via `_shared/resolve_env.sh` (resolves `$GTM_ENV_PATH` on any machine).
 

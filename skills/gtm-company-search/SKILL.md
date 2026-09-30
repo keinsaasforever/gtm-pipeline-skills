@@ -1,6 +1,6 @@
 ---
 name: gtm-pipeline:company-search
-description: Build a list of companies matching ICP criteria. Use when a client needs a company list — no existing list, wants to expand, or signal-based discovery needs enrichment. Providers: FullEnrich Company Search (default for firmographic filters), Sales Navigator + PhantomBuster, Parallel FindAll, Firecrawl Agent, Pipe0 Amplemarket, BC/FE byproduct, web scraping. Also triggers on "build company list", "find companies", "company search".
+description: Build a list of companies matching ICP criteria. Use when a client needs a company list — no existing list, wants to expand, or signal-based discovery needs enrichment. Providers: FullEnrich Company Search (default for firmographic filters), public directories and open databases via TinyFish (free; hospitals, association members, exhibitors, rankings, registers), Sales Navigator + PhantomBuster, Parallel FindAll, Firecrawl Agent, Pipe0 Amplemarket, BC/FE byproduct. Also triggers on "build company list", "find companies", "company search".
 ---
 
 # Company Search
@@ -41,6 +41,10 @@ keywords). FullEnrich has no funding, hiring or revenue filter. BetterContact an
 on the people search, which usually means no company step at all (see the matrix). Use
 Parallel FindAll or Firecrawl Agent for behaviour no filter anywhere expresses (a project, a
 campaign, press), or when FE returns too few relevant companies after 2 attempts.
+
+**A list-shaped population goes to the directory route first** (hospitals, universities, association
+members, trade-fair exhibitors, a ranking, a public register → *From a directory or open database*
+below): the list is free and bounded, and filters can't express "private clinic" or "BFW member".
 
 ### From FullEnrich Company Search (default)
 
@@ -223,10 +227,60 @@ for r in results:
 
 ---
 
-### From Web Scraping
+### From a directory or open database (free, TinyFish)
 
-- Industry directories, association member lists, competitor customer lists
-- Firecrawl scrape or manual collection
+**When:** the ICP names a **list-shaped population**, a group that some public list enumerates:
+hospitals or clinics, universities, municipalities or public utilities, the members of an association,
+the exhibitors of a trade fair, a ranking ("top 50 developers in Munich"), a public register. Also when
+the finders' value lists can't separate the segment ("private clinic" is not an industry, only
+`Hospitals and Health Care`). The list is free and already bounded, and it often carries the
+attribute that separates the segment. Precedent: nextbike's clinic segment came from a Wikipedia hospital
+list (21 clinics → 47 candidates → 18 delivered).
+
+1. **Name the list before searching.** Write to `context/icp.md` → `## Search routing`: the population,
+   the region and the attribute the list must carry (operator type, size, member status).
+2. **Find candidate lists** with TinyFish search (free, ~25 queries/min), 2–4 queries in the market's
+   language: `Liste der <population> in <region>` (Wikipedia), `<association> Mitglieder` /
+   `Mitgliederverzeichnis`, `<fair> Aussteller <year>`, `<population> Verzeichnis <region>`, `<population>
+   open data <region>` (open-data portals, statistics offices). Prefer, in order: an official register
+   or open-data file (CSV / JSON / XLSX), an association member list, a Wikipedia list, a ranking article.
+   Skip aggregators that only resell the same entries behind contact forms.
+3. **Read it** with TinyFish fetch (`format: markdown`, `links: true`; ≤ 10 URLs per call, free). A
+   paginated directory: fetch the page URLs in batches of 10. A CSV / JSON / XLSX download: `curl` it and
+   parse it with Python; no fetch needed. **A list behind a search form, a map widget or infinite scroll
+   comes back without its entries** (tested 2026-09-30: an association's member map returned only its
+   social links). Then take the next list, or run the TinyFish browser agent (`agent run` with a JSON
+   schema; paid automation, so state the cost first) or a Firecrawl scrape with `actions`.
+4. **Extract rows** to `csv/input/companies_raw.csv`: `company_name`, city, the distinguishing attribute,
+   the website when the list links one, `source=directory:<list url>`. Filter on the attribute (Wikipedia's
+   Munich hospital list has an operator column, `Träger`: 18 of its 43 hospitals are `Privat`), dedupe,
+   drop existing customers and the blacklist, then cap (a demo: ~2× the target companies).
+5. **Domains.** The fetch returns the list's outbound links in `links[]` **without their anchor text**
+   (the markdown has none inline), so match a link to a row by a distinctive name token in its host
+   (`geisenhoferklinik.de` ↔ "Frauenklinik Dr. Geisenhofer"; on the Munich hospital list this found 11
+   of the 18 private clinics). For the rest, one TinyFish search per company, `<name> <city>` with
+   `location` = the country, and read its 10 hits for the company's own domain, skipping aggregators. In a
+   25-company benchmark (2026-09-29) that got 23 domains right and 0 wrong; SerpAPI `google_light` got 11
+   right and 10 wrong. Spot-check generic names, and keep the group brand's own domain (`bosch-pt.com`,
+   not `bosch.com`).
+6. **People search keyed by name + location**, never by the exact domain alone (conventions #11): a list's
+   `acme.de` may be indexed as `acme.com`.
+
+```bash
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+export $(grep -E '^TINYFISH_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+curl -s -G "https://api.search.tinyfish.ai/" -H "X-API-Key: $TINYFISH_API_KEY" \
+  --data-urlencode "query=Liste der Krankenhäuser in München" --data-urlencode "location=DE" \
+  > {client-slug}-gtm/csv/intermediate/directory_search.json && \
+curl -s -X POST "https://api.fetch.tinyfish.ai/" -H "X-API-Key: $TINYFISH_API_KEY" -H "Content-Type: application/json" \
+  -d '{"urls": ["<list url>"], "format": "markdown", "links": true}' \
+  > {client-slug}-gtm/csv/intermediate/directory_pages.json
+```
+
+Search results: `results[].url/title/snippet`. Fetch results: `results[].text` (markdown), `links[]`,
+`final_url`, `published_date`; failures land in `errors[]` without failing the call. With the TinyFish
+MCP connected, its `search` and `fetch_content` tools do the same. Competitor customer lists and case-study
+pages work the same way.
 
 ---
 
@@ -234,7 +288,7 @@ for r in results:
 
 | Have | Missing | Solution |
 |------|---------|----------|
-| Names / LinkedIn URLs | Domains | SerpAPI domain lookup (see people-search Step 0) |
+| Names / LinkedIn URLs | Domains | TinyFish search (free, step 5 of the directory route); SerpAPI domain lookup as the fallback (see people-search Step 0) |
 | Names / domains | LinkedIn URLs | PhantomBuster URL Finder |
 | LinkedIn company URLs | SN URLs | PhantomBuster can derive |
 
@@ -286,6 +340,7 @@ present the options with estimated costs and get approval.
 - For FindAll: start with `match_limit: 10`, review results
 - For SN+PB: export 10–20 companies, verify data quality
 - For Firecrawl Agent: test with a small prompt
+- For a directory: fetch the list, count its rows, check that the distinguishing attribute is there, and verify 5 domains before extracting the rest
 
 ### 4. Review
 - Check company names, domains, LinkedIn URLs, industries
@@ -308,6 +363,9 @@ company_industry, company_hq_location, company_hq_country,
 company_employee_count, company_employee_range,
 source
 ```
+
+`source` names where a row came from (`fullenrich`, `directory:<list url>`, …); sanitize strips it from
+the lead-facing output.
 
 Additional fields from FullEnrich (`fe_search.py companies`):
 ```

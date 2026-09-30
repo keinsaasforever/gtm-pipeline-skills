@@ -200,9 +200,10 @@ universe *before* the first paid search, in this order:
    own value list. This is the normal case and costs nothing extra.
 2. **No value list fits, or the filtered pull comes back slim or off-segment** → bound it by
    enumerating companies instead: a public ranking, a directory, an association member list, a
-   client CSV (free), then one people search per company. This is how the emmy (18 named brands)
-   and nextbike (21 clinics from a public hospital list) runs stayed at a 1.3:1 and 2.6:1
-   pulled-to-delivered ratio.
+   client CSV (free; method: company-search → *From a directory or open database*), then one people
+   search per company. A list-shaped segment (hospitals, association members, exhibitors) starts here.
+   This is how the emmy (18 named brands) and nextbike (21 clinics from a public hospital list) runs
+   stayed at a 1.3:1 and 2.6:1 pulled-to-delivered ratio.
 Cost of ignoring it (Reduzer, 2026-09-17): an unbounded two-country persona pull bought 311 rows to
 deliver 30, a 10:1 ratio, and 59.5 of the run's credits went to rows that were filtered away.
 
@@ -385,14 +386,17 @@ source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
 | `PIPE0_API_KEY` | Pipe0 | people-search, people-enrichment, company-enrichment |
 | `BETTERCONTACT_API_KEY` | BetterContact | people-search, people-enrichment |
 | `FULLENRICH_API_KEY` | FullEnrich | company-search, people-search, people-enrichment |
-| `SERPAPI_API_KEY` | SerpAPI | company-search, people-search (domain lookup) |
+| `SERPAPI_API_KEY` | SerpAPI | company-search, people-search (domain lookup fallback) |
+| `TINYFISH_API_KEY` | TinyFish (free search + fetch) | company-search (directories, domain lookup), signal-search (site-search fallback), demo-headless |
+| `FIRECRAWL_API_KEY` | Firecrawl | signal-search (`--site-search firecrawl`), company-search (Firecrawl Agent) |
+| `TAVILY_API_KEY` | Tavily | signal-search (`--site-search tavily`, optional, for comparisons) |
 | `PARALLEL_API_KEY` | Parallel AI | people-search (FindAll), signal-search, company-search, company-enrichment |
 | `APIFY_API_KEY` | Apify | company-enrichment (SimilarWeb traffic) |
 | `PHANTOMBUSTER_API_KEY` | PhantomBuster | company-enrichment (SN scraper), people-search (employees), outreach |
 | `LINKEDIN_SESSION_COOKIE` | LinkedIn li_at cookie | all PhantomBuster agents |
 | `LINKEDIN_USER_AGENT` | Browser user agent | all PhantomBuster agents |
 
-Other credentials (Firecrawl, Stripe) are requested when the corresponding skill runs. `OPENROUTER_API_KEY` is **legacy/optional** — needed only for `signal_search.py --llm-backend openrouter`; the default `agent` path needs no LLM key (see Model Routing).
+Other credentials (Stripe) are requested when the corresponding skill runs. `OPENROUTER_API_KEY` is **legacy/optional** — needed only for `signal_search.py --llm-backend openrouter`; the default `agent` path needs no LLM key (see Model Routing).
 
 **PhantomBuster** scripts load vars in-script rather than via export+inject — see `_shared/phantombuster.md`.
 

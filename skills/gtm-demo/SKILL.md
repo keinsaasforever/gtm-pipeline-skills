@@ -197,12 +197,20 @@ which Step 5 needs.
 Pull `target ÷ expected pass rate` (≈1.5×), per segment, and stop at the target. Re-verify titles
 and segment locally — every provider filter is advisory.
 
-### 3c — Broad research route (when 3a says the filters don't fit)
+### 3c — Broad research route (when 3a says the filters don't fit, or the segment is list-shaped)
 
-This is the emmy/nextbike route, and it is cheap because the company list is free:
+This is the emmy/nextbike route, and it is cheap because the company list is free. **Take it directly,
+without 3a probes, when the prompt names a list-shaped population**: an institution type (hospitals,
+clinics, universities, schools, municipalities, public utilities), the members of an association, the
+exhibitors of a fair, a ranking or a register. A finder's industry value is broader
+than such a segment ("private clinic" only exists as `Hospitals and Health Care`), so a filtered pull
+buys the wrong rows. For any other segment, 3a's two probes decide.
 1. Enumerate a **finite company pool** from public sources: an industry ranking, a trade-association
-   member list, a public register, a directory, a Wikipedia list, or a client-supplied CSV. Cap it
-   at ~2× the target companies. Verify each domain.
+   member list, a public register, a directory, a Wikipedia list, or a client-supplied CSV. Method:
+   **company-search → *From a directory or open database*** (TinyFish search + fetch, free). Pick the
+   list that carries the segment's distinguishing attribute (operator type, size, member status) and,
+   ideally, each entry's website. Record the list URLs in `context/icp.md` → `## Search routing`. Cap
+   the pool at ~2× the target companies. Verify each domain.
 2. Then one people search over the pool (`limit` 5–8 per company, tier-1 titles), and pick one
    contact per company. BetterContact takes the whole pool in one call: `company: {include: [domains]}`
    + `lead_location` + titles + `limit_per_company: 3` (Sphere: 44 domains → 115 people at 36
@@ -356,12 +364,12 @@ with open('csv/output/contacts_enriched.csv') as f, open('csv/input/companies_ra
 
 # Run signal-search on the unique companies
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-export $(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY|FIRECRAWL_API_KEY|GEMINI_API_KEY)=' "$GTM_ENV_PATH" | xargs) && \
+export $(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY|TINYFISH_API_KEY|FIRECRAWL_API_KEY|TAVILY_API_KEY|GEMINI_API_KEY)=' "$GTM_ENV_PATH" | xargs) && \
   python3 ~/.claude/skills/gtm-signal-search/signal_search.py \
     --client-dir {client-slug}-gtm
 ```
 
-The `resolve_env.sh` source line ensures `$GTM_ENV_PATH` is set even in a fresh shell (see signal-search SKILL.md / conventions). For the demo, leave Parallel enrichment **OFF**. After scoring, run the **Firecrawl fallback** (signal-search Step 5c) on the companies left without a kept signal: at most 10 pages each, scored with the same rubric. Every company it turns up a signal for moves from ICP-first to Signal-first.
+The `resolve_env.sh` source line ensures `$GTM_ENV_PATH` is set even in a fresh shell (see signal-search SKILL.md / conventions). For the demo, leave Parallel enrichment **OFF**. After scoring, run the **site-search fallback** (signal-search Step 5c, `--crawl-only --site-search tinyfish`, free) on the companies left without a kept signal: at most 5 pages each, scored with the same rubric. `firecrawl` (≤ 7 credits per company) and `tavily` (1 credit) are selectable for comparison. Every company it turns up a signal for moves from ICP-first to Signal-first.
 
 ### Merge signals back into contacts
 

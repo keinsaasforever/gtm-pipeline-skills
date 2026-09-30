@@ -59,7 +59,9 @@ line. Your webhook layer reads that file.
 | `CLAUDE_PERMISSION_MODE` | `acceptEdits` | see below |
 
 Provider keys resolve through `resolve_env.sh` / `GTM_ENV_PATH` as usual — the default `agent`
-signal backend needs **no** LLM key (only `PARALLEL_API_KEY` for search).
+signal backend needs **no** LLM key (only `PARALLEL_API_KEY` for search). `TINYFISH_API_KEY` (free)
+powers the directory route and the signal site-search fallback; without it both are skipped and logged
+in `shortfalls`.
 
 ## Permissions (read before deploying)
 

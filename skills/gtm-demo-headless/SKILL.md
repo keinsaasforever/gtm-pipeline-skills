@@ -39,16 +39,17 @@ cannot drift.
 | Existing customers | Excluded (gtm-demo Step 1, item 3): the client's reference/customer pages and partner or dealer finder, matched by **domain**, parent and sister companies included. |
 | Companies named in the prompt | Treated as existing customers (gtm-demo Step 1, item 4): excluded with their group, lookalikes shown, recorded under `## Assumptions`. |
 | Personas | Derived in Step 1b from the client site. Never search before `## Personas` exists in `context/icp.md`. |
-| Route | Filtered people search (gtm-demo 3b), BetterContact first with `limit_per_company: 1`, FullEnrich second. Switch to the research route (3c) when no industry value fits, or after **two** probe queries return <½ the target or mostly off-segment rows. |
+| Route | Filtered people search (gtm-demo 3b), BetterContact first with `limit_per_company: 1`, FullEnrich second. Switch to the research route (3c) when no industry value fits, or after **two** probe queries return <½ the target or mostly off-segment rows. **A list-shaped segment** (institution type, association members, fair exhibitors, a ranking, a register; gtm-demo 3c) **goes to 3c directly.** |
+| Directory route | **TinyFish search + fetch only** (company-search → *From a directory or open database*): free, one key, plain REST calls, nothing to count against the budget. Never the paid browser agent. A list that comes back without its entries (search form, map widget, infinite scroll) → try the next list; no usable list after 4 searches → back to 3b. Record the list URLs under `## Assumptions`. |
 | Countries / regions | Exactly what the prompt names. Never add a neighbouring market. If it names none, use the client's own home market. |
 | Draft language | Each contact's own market language (bokmål for Norway, Swedish for Sweden, German for DACH…), English only when the market is English-speaking or the contact's own profile is English. Deck copy: English, unless the whole audience shares one non-English market, then that language. |
-| Signals | ON, but only for the **final selected companies**, after enrichment, and only while budget remains. Strong signals only; a product launch only when it creates the need the offering serves (gtm-demo Step 6). Fresh ≤60 days, sourced from the article itself, verified per the signal rubric. Companies web search leaves without a kept signal get the Firecrawl fallback (signal-search Step 5c): **10 pages per company at most**, counted in `spend.firecrawl_pages`, not in the USD 3. Still no signal → ICP-fit card built from timeless fit facts only (gtm-demo Step 6 → Hook sources). |
+| Signals | ON, but only for the **final selected companies**, after enrichment, and only while budget remains. Strong signals only; a product launch only when it creates the need the offering serves (gtm-demo Step 6). Fresh ≤60 days, sourced from the article itself, verified per the signal rubric. Companies web search leaves without a kept signal get the site-search fallback (signal-search Step 5c) with **`--site-search tinyfish` only** (free, ≤ 5 pages per company, counted in `spend.site_search_pages`); Firecrawl and Tavily are for interactive comparisons. Still no signal → ICP-fit card built from timeless fit facts only (gtm-demo Step 6 → Hook sources). |
 | Phones | Never. |
 | Email waterfall | **Kitt first** (`_shared/kitt.py`, `KITT_API_KEY`), then **one** other provider for its misses (PhantomBuster if available, else FullEnrich) — never a third. Every address that other provider found goes back through the **Kitt gate**, which keeps `valid` and `valid-risky` (catch-all): unknown, invalid and unchecked lose the address (gtm-demo Step 5). Drop any address whose domain is not the target company's. A lost address never drops the contact — a spare at the same company with a kept address takes the slot, otherwise the card ships LinkedIn-only with the `est-warn` badge. |
 | Draft register | **Your judgement, per persona**, recorded in `## Assumptions`: formal (Sie / vous) for C-level and engineering or department heads at established industrials, corporates and the public sector; informal (Du) where the persona itself writes that way (founders, startups, agencies, most tech teams). One register per persona group, not per person. |
 | Deck CTA | keinsaas's booking link (gtm-demo Step 7b `{{CALENDAR_URL}}`). Never the prospect's own booking link. |
 | Delivery | Never send anything. Write the deck, the CSV and the cover email to files. |
-| Failure of any single step | Log it, continue with the next step, and report it in `result.json`. A missing signal, a missing email or a failed provider never aborts the run. |
+| Failure of any single step | Log it, continue with the next step, and report it in `result.json`. A missing signal, a missing email or a failed provider never aborts the run. No `TINYFISH_API_KEY`, or TinyFish down: the directory route falls back to 3b and the site-search fallback is skipped, both logged in `shortfalls`. |
 
 ---
 
@@ -67,7 +68,7 @@ Write `{client-slug}-gtm/result.json` as the last action:
   "with_signals_enabled": true,
   "deck_path": "csv/output/... .html",
   "csv_path": "csv/output/contacts_enriched.csv",
-  "spend": { "credits": 41.5, "web_usd": 1.2, "firecrawl_pages": 90, "cap_hit": false },
+  "spend": { "credits": 41.5, "web_usd": 1.2, "site_search_pages": 45, "cap_hit": false },
   "assumptions": ["…"],
   "shortfalls": ["…"],
   "sanitize_report": { "…": 0 } }
