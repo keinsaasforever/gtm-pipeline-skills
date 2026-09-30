@@ -1,6 +1,6 @@
 ---
 name: gtm-pipeline:signal-search
-description: Find buying intent signals for target companies and score them for purchase intent. Runs a Python script (signal_search.py) that orchestrates Parallel web search (always on), a Firecrawl crawl of the companies web search left without a signal (fallback), Parallel structured enrichment (opt-in), and a Signal Assessment LLM that scores 1-100. Universal templates live in the script; client-specific prompts come from the working directory's context/ files. Runs standalone or in either pipeline workflow — does NOT require ICP scoring as input. Also triggers on "signal search", "find signals for", "buying intent".
+description: Find buying intent signals for target companies and score them for purchase intent. Runs a Python script (signal_search.py) that orchestrates Parallel web search (always on), a cheap site-search fallback restricted to the company's own domain for companies web search left without a signal (three interchangeable providers, selectable via --site-search: TinyFish, Firecrawl `/v2/search`, Tavily), Parallel structured enrichment (opt-in), and a Signal Assessment LLM that scores 1-100. Universal templates live in the script; client-specific prompts come from the working directory's context/ files. Runs standalone or in either pipeline workflow — does NOT require ICP scoring as input. Also triggers on "signal search", "find signals for", "buying intent".
 ---
 
 # Signal Search
@@ -64,7 +64,7 @@ Use AskUserQuestion (or a direct prose ask) to collect each missing piece. Sugge
 
 **Signal criteria (`signal_criteria.md`) — INCLUDE *and* EXCLUDE:**
 
-This file is the heart of the prompt — it feeds the Parallel search objective, both extraction LLMs, and the Firecrawl crawl hint. **Unless the user hands you a ready-made list, help them build one** by walking the same dimensions the n8n workflow uses. Capture two blocks:
+This file is the heart of the prompt — it feeds the Parallel search objective and both extraction LLMs. **Unless the user hands you a ready-made list, help them build one** by walking the same dimensions the n8n workflow uses. Capture two blocks:
 
 *Include — what counts as a buying signal for THIS offering.* Ask: *"What would a company be doing right now that suggests they need our product?"* Offer this category palette (adapt to the offering, don't paste verbatim):
 - Funding / acquisitions tied to relevant budget
@@ -95,10 +95,10 @@ out of the include bullets for the same reason. Typical excludes:
 |-----------|--------------|---------|---------------|
 | Max age of signals | "How recent must a signal be?" | 4 months | `--lookback-months` (gates Parallel `after_date` *and* the source freshness filter on search results and crawled pages) |
 | Web results per company | "How many web results per company should we scan?" | 12 | `--max-results` (raise for large/noisy companies, lower to save credits) |
-| Firecrawl | — (don't ask) | fallback | News listing + fresh items of the companies still without a signal after scoring — see Step 5c |
+| Site search | — (don't ask) | tinyfish | Recent pages from the company's own domain (subdomains included) for the companies still without a signal — `--site-search {tinyfish,firecrawl,tavily}`, see Step 5c |
 | Enrichment on/off | "Do you need structured fields (funding stage, job URLs, tech stack) as their own columns?" | off | `--parallel-enrichment` |
 
-**Baked defaults — don't ask, only change in the script if a client truly needs it:** the crawl `excludePaths` (privacy/legal/cart/shop, careers/job ads, plus agent-directed files like `agents.md`/`llms.txt`), the `scrapeOptions` (markdown, main-content-only, ad-block), and the Parallel-enrichment JSON schema (funding / hiring / digital-initiatives / tech-stack).
+**Baked defaults — don't ask, only change in the script if a client truly needs it:** the `excludePaths` that filter site-search hits (privacy/legal/cart/shop, careers/job ads, plus agent-directed files like `agents.md`/`llms.txt`), the `scrapeOptions` (markdown, main-content-only, ad-block), and the Parallel-enrichment JSON schema (funding / hiring / digital-initiatives / tech-stack).
 
 ### Step 3 — Save the context files
 
@@ -111,7 +111,7 @@ Use AskUserQuestion to confirm. Defaults:
 | Source | Default | When to enable |
 |--------|---------|----------------|
 | Parallel web search | ON (always) | — |
-| Firecrawl website crawl | FALLBACK | Runs after scoring on the companies web search left without a signal (Step 5c). Nothing to decide here. |
+| Site-search fallback | LAST RESORT | Runs after scoring on the companies web search left without a signal (Step 5c). Three interchangeable providers via `--site-search`: TinyFish (free, default recommendation), Firecrawl, Tavily (1 credit) — pick one per run, or run more than one to compare. Nothing to decide here unless comparing providers. |
 | Parallel structured enrichment | OFF | Enable when **structured fields are required downstream** — funding stage, hiring signals with job URLs, tech stack indicators that need to live in their own CSV columns. Skip if the scored signals JSON is enough. |
 
 ### Step 5 — Run the script
@@ -140,7 +140,7 @@ third-party LLM, no nested `claude -p`. This is the path both interactively and 
 
 **Env path:** the `resolve_env.sh` helper finds your `.env` even when `GTM_ENV_PATH` isn't exported — it reads the `GTM_ENV_PATH=` line from `~/.claude/skills/gtm-pipeline/_shared/local.md`, falling back to `~/.env.gtm`. All GTM keys live in that one file.
 
-`OPENROUTER_API_KEY`/`GEMINI_API_KEY` are needed **only** for `--llm-backend openrouter`. `FIRECRAWL_API_KEY` is only needed for the native `--firecrawl` route, not for `--firecrawl-pages-dir`.
+`OPENROUTER_API_KEY`/`GEMINI_API_KEY` are needed **only** for `--llm-backend openrouter`. `FIRECRAWL_API_KEY` / `TINYFISH_API_KEY` / `TAVILY_API_KEY` are only needed for the matching `--site-search` provider, not for `--firecrawl-pages-dir`.
 
 **Lookback default is 2 months (~60 days)** — signals older than that are not buying intent.
 
@@ -190,47 +190,78 @@ gate must not come back through it (perma-trade, 2026-09-18: dropped news reache
 free-text fit fields). With no kept signal it says so and nothing else.
 Downstream `sanitize.py` drops any signal still lacking a source/date, citing a non-article URL, or left `PENDING`.
 
-### Step 5c — Firecrawl fallback: the companies still without a signal
+### Step 5c — Site-search fallback (last resort): the companies still without a signal
 
 Web search misses what a company publishes only on its own site: project news, branch openings,
 press releases nobody syndicated. After 5b, write every company with **no kept signal** (none passed
 the gates, or only loosely fitting ones did, per Axis 2) to `csv/input/companies_nosignal.csv` (same
 columns as the input). Only these get the fallback; a company with a kept signal never does.
 
-**Limits:** at most **10 pages per company** (1 Firecrawl credit per page), markdown, main content
-only. Log the pages in `run_log.md`. Job ads don't count unless they carry a posting date inside the
-window, and most carry none, so don't fetch careers pages.
+**Why no crawl.** A full site crawl takes pages in sitemap order — archives first, not newest first.
+On leonhard-weiss.de (2026-09-21) crawling spent 9 credits on archived press releases and missed all
+3 items inside the window. A search restricted to the company's own domain, with a date range, finds
+the recent items directly and far cheaper. **Never crawl.**
 
-**Listing first.** How you call Firecrawl is your choice; this order is what works:
+**Run the script's own site search (recommended).** The script does the search-then-fetch itself —
+no manual curl or MCP calls needed:
 
-1. **Find the news listing:** the site's news, press, Aktuelles or blog overview. `firecrawl_map`
-   (1 credit, `search` narrows it) or the homepage menu shows where it is.
-2. **Fetch the listing** (1 credit). It shows each item's date and link. No listing, or none with
-   dates → stop: the site publishes nothing dated (depenbrock.de, 2026-09-21: an employer-branding
-   blog from 2024 and undated references).
-3. **Fetch only the items dated inside the window** that match `signal_criteria.md`. Listing and
-   items together stay within the 10 pages.
+```bash
+source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
+export $(grep -E '^(TINYFISH_API_KEY|FIRECRAWL_API_KEY|TAVILY_API_KEY)=' "$GTM_ENV_PATH" | xargs) && \
+python3 ~/.claude/skills/gtm-signal-search/signal_search.py --client-dir {client-slug}-gtm \
+  --input-csv {client-slug}-gtm/csv/input/companies_nosignal.csv --crawl-only \
+  --site-search tinyfish
+```
 
-Don't crawl the whole site: a crawl takes article pages in sitemap order, not newest first. On
-leonhard-weiss.de (2026-09-21) it spent 9 credits on archived press releases and missed all 3 inside
-the window; listing first found them for 2.
+Pick the provider with `--site-search {tinyfish,firecrawl,tavily}` — only export the key for the one
+you picked. **`tinyfish` is the default recommendation:** free, and each search hit already carries
+its own display date. `firecrawl` and `tavily` stay available to run the same companies through for
+comparison. `--firecrawl` still works as a shorthand for `--site-search firecrawl` (old callers).
 
-**Through the date filter.** Save the fetched pages, unchanged, as one JSON array
-(`[{"markdown", "metadata"}]`) in `{client-slug}-gtm/firecrawl_pages/{domain}.json`, `{domain}` being the
-row's `company_domain` (no `www.`). With
-`FIRECRAWL_API_KEY`, fetch straight to disk so the markdown never passes through your context:
+All three query `site:{domain}` (or the equivalent domain filter) + the news words (`news OR press OR
+presse OR pressemitteilung OR aktuelles`), restricted to the company's own domain (subdomains
+included) and the lookback window, then run the same hit filter (`keep_site_hits()`: drop
+careers/legal/cart/PDF paths, dedupe, cap at 5 pages) before fetching content:
+- **TinyFish — free.** `search` (`include_domains`, `after_date`) then one `fetch` call for the kept
+  URLs. The search hit's own `date` is a localized display string ("22.09.2026", "vor 6 Tagen") and
+  isn't parsed; `fetch`'s `published_date` (ISO or null) is used for freshness instead.
+- **Tavily — 1 credit per company.** Content comes back in the same search call, no second fetch.
+  `raw_content` was empty for roughly half the hits in a live test (2026-09-30), so the script falls
+  back to `content`. Its `published_date` is Tavily's own estimate ("published or last updated"), not
+  necessarily the article's own dateline — the 5b freshness rubric (the date the source prints for
+  itself, read out of the text) is still what decides whether a page survives.
+- **Firecrawl `/v2/search`:** `site:{domain} news OR press OR presse OR pressemitteilung OR
+  aktuelles` with `tbs: "sbd:1,qdr:m{N}"` (past N months, newest first; `sources: ["web"]`,
+  `limit: 10`; 2 credits), then `/v2/scrape` per kept hit (1 credit; `"parsers": []` so a PDF isn't
+  billed per page). Hits carry no date. A custom range (`cdr:1,cd_min:…`) is ignored, and a bare
+  `site:{domain}` query with no other words ignores any date filter and returns homepages, subdomain
+  roots and legal pages — keep the news words.
+
+Cost per company: **TinyFish free; Tavily 1 credit; Firecrawl ≤ 2 credits for the search + 1 per
+scraped page (≤ 7 total).**
+
+**Alternative — no API key: fetch the pages yourself (agent/MCP route).** When you only have TinyFish
+or Firecrawl via MCP and no `*_API_KEY` in the env, run the search and fetch yourself instead of
+letting the script call the provider. At most **5 fetched pages per company**; skip careers/job ads,
+legal pages, product pages, and PDFs; fetch only hits whose title/snippet matches
+`signal_criteria.md`. Map each fetched page to the shape `{"markdown", "metadata": {"title",
+"sourceURL", optional "publishedTime"}}` (TinyFish: `text` → `markdown`; `title`, `final_url`,
+`published_date` → `metadata.title`, `metadata.sourceURL`, `metadata.publishedTime`). Save the fetched
+pages, unchanged, as one JSON array in `{client-slug}-gtm/firecrawl_pages/{domain}.json`, `{domain}`
+being the row's `company_domain` (no `www.`). With `FIRECRAWL_API_KEY`, fetch straight to disk so the
+markdown never passes through your context:
 
 ```bash
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
 export $(grep -E '^FIRECRAWL_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
-for u in "$LISTING_URL" "$ITEM_URL"; do
+for u in "$HIT_URL_1" "$HIT_URL_2"; do
   curl -s -m 120 -X POST https://api.firecrawl.dev/v2/scrape -H "Authorization: Bearer $FIRECRAWL_API_KEY" \
-    -H "Content-Type: application/json" -d "{\"url\":\"$u\",\"formats\":[\"markdown\"],\"onlyMainContent\":true}"; echo
+    -H "Content-Type: application/json" -d "{\"url\":\"$u\",\"formats\":[\"markdown\"],\"onlyMainContent\":true,\"parsers\":[]}"; echo
 done | python3 -c "import json,sys; json.dump([json.loads(l)['data'] for l in sys.stdin if l.strip()], open('{client-slug}-gtm/firecrawl_pages/{domain}.json','w'), ensure_ascii=False)"
 ```
 
-With Firecrawl only as MCP, use `firecrawl_scrape` in sub-agents that write the result the same way.
-Then run the filter pass over all of them:
+With TinyFish or Firecrawl only as MCP, run the search/fetch in sub-agents that write the result the
+same way. Then run the filter pass over all of them:
 
 ```bash
 python3 ~/.claude/skills/gtm-signal-search/signal_search.py --client-dir {client-slug}-gtm \
@@ -239,16 +270,15 @@ python3 ~/.claude/skills/gtm-signal-search/signal_search.py --client-dir {client
 ```
 
 `--crawl-only` skips the web search (these companies had theirs) and writes `signals_crawl.csv` and
-`signals_raw_crawl/{domain}.json`, so the first pass stays as it was. A page is kept only when its own date
-is inside the window: the date printed on the page first, its metadata only when the text has none. `website_urls_crawled` lists every page fetched, the
-dropped ones included. Score the kept pages with the 5b rubric. A listing page is never the source:
-cite the item's own URL, as 5b says. Write the result into the company's row in `signals.csv`. A
-company still without a kept signal stays ICP-fit.
+`signals_raw_crawl/{domain}.json`, so the first pass stays as it was — true for either route above. A
+page is kept only when its own date is inside the window: the date printed on the page first, its
+metadata only when the text has none. `website_urls_crawled` lists every page fetched, the dropped
+ones included. Score the kept pages with the 5b rubric. A listing/search-result page is never the
+source: cite the item's own URL, as 5b says. Write the result into the company's row in `signals.csv`.
+A company still without a kept signal stays ICP-fit.
 
-With no agent in the loop (`claude-cli` backend), `--crawl-only --firecrawl` lets the script crawl
-instead, with the ceiling above. Its crawl `prompt` comes from `signal_criteria.md`; the path words in
-`FIRECRAWL_CRAWL_PROMPT_TEMPLATE` steer which sections Firecrawl includes, and `FIRECRAWL_EXCLUDE_PATHS`
-replaces the excludes Firecrawl would generate from the prompt.
+With no agent in the loop (`claude-cli` backend), `--crawl-only --site-search {tinyfish,firecrawl,tavily}`
+runs the chosen provider's site search itself (cost ceilings above).
 
 ### Step 6 — Review and log
 
@@ -267,9 +297,10 @@ Append a run summary to `run_log.md` per `conventions.md` (records processed, hi
 --client-dir PATH               {client-slug}-gtm working directory (required)
 --input-csv PATH                override input (default: csv/input/companies_raw.csv)
 --output-csv PATH               override output (default: csv/intermediate/signals.csv)
---firecrawl                     enable Firecrawl website crawl via the Firecrawl API (needs FIRECRAWL_API_KEY)
---firecrawl-pages-dir PATH      read pre-crawled pages from PATH/{domain}.json instead of the API (no key; MCP route)
---crawl-only                    Firecrawl fallback pass (Step 5c): no web search; writes signals_crawl.csv + signals_raw_crawl/
+--site-search {tinyfish,firecrawl,tavily}   site-search fallback provider (last-resort with --crawl-only; needs the matching *_API_KEY)
+--firecrawl                     alias for --site-search firecrawl (old callers)
+--firecrawl-pages-dir PATH      read fetched pages from PATH/{domain}.json instead of calling a site-search API (no key; TinyFish/MCP route)
+--crawl-only                    site-search fallback pass (Step 5c): no web search; writes signals_crawl.csv + signals_raw_crawl/
 --parallel-enrichment           enable Parallel structured enrichment
 --llm-backend {agent,claude-cli,openrouter}   where extraction+scoring happen (default: agent)
 --raw-evidence-dir PATH         where the agent backend writes raw evidence (default: csv/intermediate/signals_raw/)
@@ -324,7 +355,7 @@ overallScore         — 0–100 aggregate buying intent
 signalCount          — number of distinct scored signals
 scoredSignals        — JSON array of {date, summary, score, domain_verified, reasoning, keyInsight}
 overallSummary       — one-line actionable take
-websiteSignals       — JSON array from Firecrawl extraction (empty if --firecrawl off)
+websiteSignals       — JSON array from site-search extraction (empty if --site-search off)
 webSearchSignals     — JSON array from Parallel web search extraction
 parallelEnrichment   — JSON object from Parallel enrichment (empty if not enabled)
 lastRun              — YYYY-MM-DD
@@ -337,14 +368,14 @@ lastRun              — YYYY-MM-DD
 These are baked into `signal_search.py` and you should not need to edit them per client. They describe HOW to extract and score, not WHAT the user cares about.
 
 - **Parallel web search request:** objective shape, `mode: one-shot`, `max_results: 12`, `source_policy.after_date`
-- **Firecrawl crawl request:** sitemap include, `limit: 10`, a `prompt` built from the include bullets of `signal_criteria.md`, universal exclude paths (privacy/legal/contact/login/careers/etc., each pinned to a whole path segment), markdown only main content
+- **Site-search requests (three interchangeable providers, `--site-search`):** all three search `site:{domain}` / `include_domains=[domain]` + the same news words (`news OR press OR presse OR pressemitteilung OR aktuelles`), restricted to the lookback window. Firecrawl `/v2/search` — `tbs: "sbd:1,qdr:m{lookback_months}"`, `sources: ["web"]`, `limit: 10` (2 credits) then `/v2/scrape` per kept hit (1 credit each). TinyFish `search` (free) — `include_domains`, `after_date` — then one `fetch` call (free) for the kept URLs. Tavily `search` (1 credit) — `include_domains`, `start_date`/`end_date`, `include_raw_content: "markdown"` — content comes back in the same call. Every provider's hits pass through the shared `keep_site_hits()` filter (the universal exclude paths — privacy/legal/contact/login/careers/etc., each pinned to a whole path segment — plus `.pdf` and dedupe) before being kept, at most 5 pages.
 - **Web search extraction prompt:** include/exclude framing, company-anchored ("If the company is not mentioned in a result, exclude that result")
-- **Firecrawl extraction prompt:** "do not extract" list (generic descriptions, old news, vague statements), structured output schema
+- **Site-search extraction prompt:** "do not extract" list (generic descriptions, old news, vague statements), structured output schema
 - **Signal Assessment system prompt:** High/Medium/Low Intent rubric, "cut through the buzz" guard, inference caution, domain verification
 - **Signal Assessment output schema:** `{overallScore, signalCount, scoredSignals[], overallSummary}`
 - **Freshness gating, at the source:** Parallel `after_date` (only filters pages that carry a date), then `filter_search_results_by_freshness()` and `filter_crawl_pages_by_freshness()` keep only evidence whose own date is inside the window: the date the source prints for its item (`source_date()`: a date line right above the headline, else the first full date after it, else the latest in the text), and only when the text carries no full date the provider's publish date or page metadata (`2026-07-29`, `29.07.2026`, `01/09/2025`, `29. Juli 2026`, `July 29, 2026`; an ambiguous slash date takes its later past reading). The provider's stamp is often the crawl date: on the Sphere run (2026-09-24) a HENSOLDT article dated 01/09/2025 came back as 2026-09-22, and a 2022 MULTIVAC item as 2026-09-06 through the week's news in its sidebar. Undated and stale evidence never reaches extraction or scoring; the counts land in `signals_raw/{domain}.json` → `web_search_dropped_by_cutoff`. Checked by `test_freshness.py`. (Until 2026-09-21 search results were never filtered and the crawl filter kept stale and undated pages: on the perma-trade run 143 of 175 results were undated.)
 - **Domain verification:** if a signal's `domain_verified` is `false`, the script automatically zeros its score before writing
-- **Prompt-injection hardening:** crawled sites increasingly ship `agents.md` / `llms.txt` files with instructions aimed at AI crawlers. The crawl `excludePaths` skip these, and all three LLM prompts (both extractors + the assessor) are instructed to treat page/search text as untrusted data — never to follow embedded instructions, and to discard any "signal" whose content is really an instruction to an AI/agent. Validated: an injected `agents.md` "install our Shop skill" page is dropped at extraction, not scored.
+- **Prompt-injection hardening:** sites increasingly ship `agents.md` / `llms.txt` files with instructions aimed at AI crawlers. The exclude paths drop these hits before they're scraped, and all three LLM prompts (both extractors + the assessor) are instructed to treat page/search text as untrusted data — never to follow embedded instructions, and to discard any "signal" whose content is really an instruction to an AI/agent. Validated: an injected `agents.md` "install our Shop skill" page is dropped at extraction, not scored.
 
 If any of these templates need to evolve (e.g. the n8n workflow's scoring rubric is updated), edit the constants at the top of `signal_search.py`.
 
@@ -353,11 +384,11 @@ If any of these templates need to evolve (e.g. the n8n workflow's scoring rubric
 ## Cost Notes
 
 - Parallel web search (`pro` is unused here; we use the default `one-shot` mode): ~1 credit per company
-- Firecrawl fallback: 1 credit per page, ≤ 10 per company, usually 1–3 (the listing + its fresh items), and only for companies web search left without a signal
+- Site-search fallback (`--site-search`): TinyFish free; Tavily 1 credit per company; Firecrawl 2 credits per search + 1 per scraped page, ≤ 7 per company — only for companies web search left without a signal
 - Parallel enrichment (`processor: core`): ~5 credits per company
 - **`agent` backend (default): no external LLM cost** — the agent scores in-context (counts as normal session tokens). `openrouter` backend (legacy): ~USD 0.006–0.018 per company.
 
-Order of magnitude (agent backend): **web search only ≈ USD 0.01 per company; +firecrawl ≈ USD 0.05 per company; +parallel enrichment ≈ USD 0.08 per company** (Parallel/Firecrawl credits only). Always test on 5 before the full batch.
+Order of magnitude (agent backend): **web search only ≈ USD 0.01 per company; +site search ≈ USD 0.00–0.02 per company; +parallel enrichment ≈ USD 0.08 per company** (Parallel/Firecrawl credits only). Always test on 5 before the full batch.
 
 ---
 

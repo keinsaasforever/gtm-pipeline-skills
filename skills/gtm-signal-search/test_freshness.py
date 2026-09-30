@@ -77,12 +77,13 @@ for name in ("icp.md", "offering.md"):
 (tmp / "context" / "signal_criteria.md").write_text(
     "# Signal criteria — perma-trade\n\n## Include\n- Won a hospital project\n- Opened a branch\n\n## Not a signal\n- Heat-pump market news")
 ctx = ss.ClientContext.load(tmp)
-assert ctx.signal_hint == "Won a hospital project; Opened a branch", ctx.signal_hint  # was the seller's title
+bullets = ss.objective_bullets(ctx.signal_criteria)
+assert bullets == "- Won a hospital project\n- Opened a branch", bullets  # no seller title, no exclude half
 
 (tmp / "pages").mkdir()
 (tmp / "pages" / "acme.de.json").write_text(json.dumps(pages))
 ss.parallel_web_search = lambda *a, **k: (_ for _ in ()).throw(AssertionError("web search on a crawl-only pass"))
-cfg = ss.RunConfig(use_firecrawl=False, use_parallel_enrichment=False, lookback_months=2, llm_backend="agent",
+cfg = ss.RunConfig(site_search=None, use_parallel_enrichment=False, lookback_months=2, llm_backend="agent",
                    claude_extract_model="", claude_scoring_model="", extract_model="", scoring_model="",
                    gemini_extract_model="", gemini_scoring_model="", parallel_key="", firecrawl_key=None,
                    openrouter_key="", gemini_key=None, context=ctx, raw_evidence_dir=tmp / "raw",
@@ -99,4 +100,19 @@ for path in ("/karriere", "/de/jobs/", "/impressum.html", "/llms.txt", "/.well-k
 for path in ("/news/200-neue-jobs-in-erfurt", "/aktuelles/workshop-trinkwasser", "/referenzen/data-center-frankfurt",
              "/presse/restore-programm"):
     assert not excluded(path), path
+
+# keep_site_hits: shared filter for all three site-search providers.
+hits = [
+    "https://acme.de/news/a", "https://acme.de/karriere/job-1", "https://acme.de/jobs/job-2",
+    "https://acme.de/press/report.pdf", "https://acme.de/news/a",  # duplicate
+    "https://acme.de/news/b", "https://acme.de/news/c", "https://acme.de/news/d", "https://acme.de/news/e",
+]
+kept = ss.keep_site_hits(hits)
+assert kept == ["https://acme.de/news/a", "https://acme.de/news/b", "https://acme.de/news/c",
+                "https://acme.de/news/d", "https://acme.de/news/e"], kept  # karriere/jobs/.pdf/dup dropped, capped at 5, order kept
+
+# Tavily's published_date is RFC 2822; convert to ISO, or None if unparseable.
+assert ss._rfc2822_to_iso("Thu, 24 Sep 2026 19:00:00 GMT") == "2026-09-24"
+assert ss._rfc2822_to_iso("") is None
+assert ss._rfc2822_to_iso("not a date") is None
 print("ok")

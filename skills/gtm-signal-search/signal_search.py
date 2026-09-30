@@ -10,9 +10,11 @@ user's `{client}-gtm/context/` files at runtime.
 
 Sources (run per company, in parallel where possible):
   1. Parallel web search       — always on
-  2. Firecrawl website pages   — the fallback for companies web search left without a signal
+  2. Site-search fallback      — the fallback for companies web search left without a signal
                                  (--crawl-only): pages the agent fetched into --firecrawl-pages-dir
-                                 (SKILL.md Step 5c, listing first), or the script's crawl (--firecrawl)
+                                 (SKILL.md Step 5c, site search), or the script's own site search via
+                                 --site-search {tinyfish,firecrawl,tavily} (--firecrawl is an alias
+                                 for --site-search firecrawl, kept for old callers)
   3. Parallel enrichment       — opt-in (--parallel-enrichment)
   4. Signal Assessment LLM     — always on, scores merged signals 1–100
 
@@ -27,7 +29,10 @@ Output:
 Required env vars (via GTM_ENV_PATH per conventions.md):
   PARALLEL_API_KEY     — Parallel AI (web search, enrichment)
   OPENROUTER_API_KEY   — extraction + scoring LLMs
-  FIRECRAWL_API_KEY    — only if --firecrawl
+  One of these, only if selected via --site-search:
+  FIRECRAWL_API_KEY    — --site-search firecrawl
+  TINYFISH_API_KEY     — --site-search tinyfish
+  TAVILY_API_KEY       — --site-search tavily
 """
 
 from __future__ import annotations
@@ -39,14 +44,15 @@ import os
 import re
 import subprocess
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from email.utils import parsedate_to_datetime
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urlparse
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -57,8 +63,18 @@ from urllib.error import HTTPError, URLError
 
 PARALLEL_SEARCH_URL = "https://api.parallel.ai/v1beta/search"
 PARALLEL_SEARCH_BETA_HEADER = "search-extract-2025-10-10"
-FIRECRAWL_CRAWL_URL = "https://api.firecrawl.dev/v2/crawl"
-FIRECRAWL_STATUS_URL = "https://api.firecrawl.dev/v2/crawl/{crawl_id}"
+FIRECRAWL_SEARCH_URL = "https://api.firecrawl.dev/v2/search"
+FIRECRAWL_SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape"
+TINYFISH_SEARCH_URL = "https://api.search.tinyfish.ai/"
+TINYFISH_FETCH_URL = "https://api.fetch.tinyfish.ai/"
+TAVILY_SEARCH_URL = "https://api.tavily.com/search"
+# News words shared by all three site-search providers, steering toward press/news pages.
+SITE_SEARCH_WORDS = "news OR press OR presse OR pressemitteilung OR aktuelles"
+# site:{domain} restricts to the company's own domain, subdomains included. A bare site:{domain}
+# query with no other words ignores the tbs date range and returns homepages, subdomain roots and
+# legal pages (measured 2026-09-29).
+SITE_SEARCH_QUERY = "site:{domain} " + SITE_SEARCH_WORDS
+SITE_SEARCH_MAX_PAGES = 5
 PARALLEL_TASK_GROUP_URL = "https://api.parallel.ai/v1/tasks/groups"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -85,13 +101,11 @@ DEFAULT_GEMINI_SCORING_MODEL = "gemini-3-pro-preview"
 # Demo default is 2 months (~60 days). Signals older than this are not "buying intent".
 DEFAULT_LOOKBACK_MONTHS = 2
 DEFAULT_MAX_SEARCH_RESULTS = 12
-DEFAULT_CRAWL_LIMIT = 10  # pages = Firecrawl credits per company
-DEFAULT_CRAWL_POLL_INTERVAL = 30
-DEFAULT_CRAWL_POLL_TIMEOUT = 900  # 15 min
 
-# Universal Firecrawl crawl exclusions — pages that never contain signals. Firecrawl matches each
-# pattern as a regex anywhere in the path, so "shop/*" also dropped /aktuelles/workshop-… and
-# "data/*" /referenzen/data-center-…; each name is pinned to a whole path segment.
+# Universal exclude list — pages that never contain signals. Filters site-search hits (Step 5c):
+# each pattern is matched as a regex anywhere in the hit's path, so "shop/*" also drops
+# /aktuelles/workshop-… and "data/*" /referenzen/data-center-…; each name is pinned to a whole
+# path segment so it doesn't do that.
 FIRECRAWL_EXCLUDE_PATHS = ["/" + segment.replace(".", r"\.") + r"(/|\.|$)" for segment in (
     "privacy", "privacy-policy", "data", "impressum", "legal", "terms",
     "terms-of-service", "terms-of-use", "agb", "datenschutz", "datenschutzerklaerung",
@@ -183,20 +197,6 @@ If no signals are found, return: {{"signals": []}}
 Search results:
 {search_results_json}
 """
-
-# Firecrawl crawl prompt — Firecrawl turns it into crawl options; explicit params such as
-# excludePaths override what it generates. The path words below steer its includePaths (checked with
-# /v2/crawl/params-preview, 2026-09-21); a section named otherwise is rarely crawled. The events come
-# from signal_criteria.md. A crawl takes pages in sitemap order, not newest first: the agent route
-# (SKILL.md Step 5c, listing first) finds fresh items better.
-FIRECRAWL_CRAWL_PROMPT_TEMPLATE = (
-    "Find pages that each report one dated company event from the past {lookback_months} months: "
-    "news articles, press releases, blog posts, project and reference write-ups "
-    "(paths like news, press, presse, pressemitteilungen, aktuelles, neuigkeiten, meldungen, blog, "
-    "magazin, projekte, projects, referenzen, references). "
-    "Events that matter: {signal_hint}. "
-    "Skip product and service pages, careers and job ads, and general company pages."
-)
 
 # Firecrawl extraction LLM — turns crawled markdown into structured signals.
 FIRECRAWL_EXTRACTION_SYSTEM = (
@@ -476,7 +476,6 @@ class ClientContext:
     icp: str
     offering: str
     signal_criteria: str  # bullet list of what signals to look for
-    signal_hint: str  # short paraphrase for Firecrawl `prompt` field
 
     @classmethod
     def load(cls, client_dir: Path) -> "ClientContext":
@@ -502,14 +501,7 @@ class ClientContext:
         icp = (ctx / "icp.md").read_text().strip()
         offering = offering_path.read_text().strip()
         signal_criteria = (ctx / "signal_criteria.md").read_text().strip()
-        # signal_hint: the include bullets on one line, for the Firecrawl crawl prompt. The first
-        # paragraph used to serve, and in a normal file that is the "# Signal criteria — {seller}" title.
-        signal_hint = "; ".join(
-            line.strip().lstrip("-* ") for line in objective_bullets(signal_criteria).splitlines() if line.strip()
-        )
-        if len(signal_hint) > 600:
-            signal_hint = signal_hint[:600].rsplit("; ", 1)[0]  # whole bullets only
-        return cls(client_dir, icp, offering, signal_criteria, signal_hint)
+        return cls(client_dir, icp, offering, signal_criteria)
 
 
 def build_include_exclude_block(signal_criteria: str) -> str:
@@ -554,52 +546,158 @@ def parallel_web_search(
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Firecrawl crawl + extraction
+# Site-search fallback (SKILL.md Step 5c) — three interchangeable providers, one page shape:
+# {"markdown": str, "metadata": {"title", "sourceURL", optional "publishedTime"}}
 # ────────────────────────────────────────────────────────────────────────────────
 
 
-def firecrawl_start_crawl(
-    website: str, signal_hint: str, lookback_months: int, api_key: str,
-) -> str | None:
+def keep_site_hits(urls: list[str]) -> list[str]:
+    """Shared hit filter for all three site-search providers: drop excluded paths
+    (FIRECRAWL_EXCLUDE_PATHS — privacy/legal/careers/etc.) and .pdf, dedupe, cap at
+    SITE_SEARCH_MAX_PAGES. Order of the input is preserved."""
+    kept: list[str] = []
+    for url in urls:
+        if not url or url in kept:
+            continue
+        path = urlparse(url).path or ""
+        if path.lower().endswith(".pdf"):
+            continue
+        if any(re.search(p, path) for p in FIRECRAWL_EXCLUDE_PATHS):
+            continue
+        kept.append(url)
+    return kept[:SITE_SEARCH_MAX_PAGES]
+
+
+def firecrawl_site_search(domain: str, lookback_months: int, api_key: str) -> list[dict]:
+    """Cheap last-resort fallback (SKILL.md Step 5c) — never a full crawl.
+
+    Measured 2026-09-29 (15 consumer brands, 20-page cap, blind scoring): a Firecrawl /crawl
+    with a generated `prompt` produces `delay: 2` (one page at a time, ~80s/company) and
+    news-only includePaths that return 0 pages when the press section lives on another host;
+    PDFs bill per PDF page. That crawl found 0 signals. /v2/search with site:{domain} + news
+    words + tbs qdr:m{N} returns the site's recent news items (subdomains included) for
+    2 credits per 10 results — a bare site:{domain} query ignores the date range and returns
+    homepages, subdomain roots and legal pages. Cost ceiling here: 2 credits for the search +
+    1 per scraped page, capped at SITE_SEARCH_MAX_PAGES (≤ 7 credits per company).
+    """
+    # Past N months, newest first. A custom range (cdr:1,cd_min:…,cd_max:…) is ignored: on
+    # 2026-09-30 it returned listings and a 2012 PDF where qdr:m2 returned the Aug/Sep articles.
+    tbs = f"sbd:1,qdr:m{lookback_months}"
     body = {
-        "url": website,
-        "sitemap": "include",
-        "crawlEntireDomain": False,
-        "limit": DEFAULT_CRAWL_LIMIT,
-        "allowSubdomains": True,
-        "excludePaths": FIRECRAWL_EXCLUDE_PATHS,
-        "prompt": FIRECRAWL_CRAWL_PROMPT_TEMPLATE.format(
-            lookback_months=lookback_months, signal_hint=signal_hint
-        ),
-        "scrapeOptions": {
+        "query": SITE_SEARCH_QUERY.format(domain=domain),
+        "limit": 10,
+        "sources": ["web"],
+        "tbs": tbs,
+    }
+    status, data = http_request(
+        "POST", FIRECRAWL_SEARCH_URL, {"Authorization": f"Bearer {api_key}"}, body, timeout=60,
+    )
+    if status != 200 or not isinstance(data, dict):
+        return []
+    hits = (data.get("data") or {}).get("web") or []
+    urls = keep_site_hits([hit.get("url") or "" for hit in hits])
+
+    pages: list[dict] = []
+    for url in urls:
+        scrape_body = {
+            "url": url,
             "formats": ["markdown"],
             "onlyMainContent": True,
+            "parsers": [],
             "maxAge": 172800000,
-            "waitFor": 5000,
-            "timeout": 180000,
             "removeBase64Images": True,
             "blockAds": True,
             "excludeTags": ["img", "picture", "footer", "nav", "header", "aside"],
-        },
+        }
+        s_status, s_data = http_request(
+            "POST", FIRECRAWL_SCRAPE_URL, {"Authorization": f"Bearer {api_key}"}, scrape_body, timeout=120,
+        )
+        if s_status == 200 and isinstance(s_data, dict) and isinstance(s_data.get("data"), dict):
+            pages.append(s_data["data"])
+    return pages
+
+
+def tinyfish_site_search(domain: str, lookback_months: int, api_key: str) -> list[dict]:
+    """Free (search + fetch both uncharged). Cost comparison: TinyFish free; Tavily 1 credit;
+    Firecrawl ≤ 2 + 5 credits per company. Quirk: the search hit's `date` is a localized display
+    string ("22.09.2026", "vor 6 Tagen") and is not parsed here — the fetch call's own
+    `published_date` (ISO or null) is used for freshness instead."""
+    after_date = (datetime.utcnow() - timedelta(days=lookback_months * 30)).strftime("%Y-%m-%d")
+    params = {"query": SITE_SEARCH_WORDS, "include_domains": domain, "after_date": after_date}
+    url = TINYFISH_SEARCH_URL + "?" + urlencode(params)
+    status, data = http_request("GET", url, {"X-API-Key": api_key}, timeout=60)
+    if status != 200 or not isinstance(data, dict):
+        return []
+    hits = data.get("results") or []
+    urls = keep_site_hits([hit.get("url") or "" for hit in hits])
+    if not urls:
+        return []
+
+    f_status, f_data = http_request(
+        "POST", TINYFISH_FETCH_URL, {"X-API-Key": api_key},
+        {"urls": urls, "format": "markdown"}, timeout=120,
+    )
+    if f_status != 200 or not isinstance(f_data, dict):
+        return []
+
+    pages: list[dict] = []
+    for r in f_data.get("results") or []:
+        text = r.get("text") or ""
+        if not text:
+            continue
+        meta = {"title": r.get("title") or "", "sourceURL": r.get("final_url") or r.get("url") or ""}
+        if r.get("published_date"):
+            meta["publishedTime"] = r["published_date"]
+        pages.append({"markdown": text, "metadata": meta})
+    return pages
+
+
+def _rfc2822_to_iso(value: str) -> str | None:
+    """Tavily's published_date is RFC 2822 ("Thu, 24 Sep 2026 19:00:00 GMT"). None if unparseable."""
+    if not value:
+        return None
+    try:
+        return parsedate_to_datetime(value).date().isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
+def tavily_site_search(domain: str, lookback_months: int, api_key: str) -> list[dict]:
+    """1 credit per company — content comes back in the same search call, no second fetch. Cost
+    comparison: TinyFish free; Tavily 1 credit; Firecrawl ≤ 2 + 5 credits. Quirk: `raw_content`
+    was empty for 5 of 9 hits in the live test (2026-09-30) — falls back to `content`."""
+    now = datetime.utcnow()
+    body = {
+        "query": SITE_SEARCH_WORDS,
+        "include_domains": [domain],
+        "start_date": (now - timedelta(days=lookback_months * 30)).strftime("%Y-%m-%d"),
+        "end_date": now.strftime("%Y-%m-%d"),
+        "include_published_date": True,
+        "max_results": 10,
+        "search_depth": "basic",
+        "include_raw_content": "markdown",
     }
     status, data = http_request(
-        "POST", FIRECRAWL_CRAWL_URL, {"Authorization": f"Bearer {api_key}"}, body, timeout=60,
+        "POST", TAVILY_SEARCH_URL, {"Authorization": f"Bearer {api_key}"}, body, timeout=60,
     )
-    if status not in (200, 201) or not isinstance(data, dict):
-        return None
-    return data.get("id")
+    if status != 200 or not isinstance(data, dict):
+        return []
+    results = data.get("results") or []
+    by_url = {r.get("url"): r for r in results if r.get("url")}
+    kept_urls = keep_site_hits(list(by_url.keys()))
 
-
-def firecrawl_wait_for_completion(crawl_id: str, api_key: str) -> dict[str, Any] | None:
-    deadline = time.time() + DEFAULT_CRAWL_POLL_TIMEOUT
-    url = FIRECRAWL_STATUS_URL.format(crawl_id=crawl_id)
-    headers = {"Authorization": f"Bearer {api_key}"}
-    while time.time() < deadline:
-        status, data = http_request("GET", url, headers, timeout=30)
-        if status == 200 and isinstance(data, dict) and data.get("status") == "completed":
-            return data
-        time.sleep(DEFAULT_CRAWL_POLL_INTERVAL)
-    return None
+    pages: list[dict] = []
+    for url in kept_urls:
+        r = by_url[url]
+        text = r.get("raw_content") or r.get("content") or ""
+        if not text:
+            continue
+        meta = {"title": r.get("title") or "", "sourceURL": url}
+        iso = _rfc2822_to_iso(r.get("published_date") or "")
+        if iso:
+            meta["publishedTime"] = iso
+        pages.append({"markdown": text, "metadata": meta})
+    return pages
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -978,7 +1076,8 @@ def score_signals(
 
 @dataclass
 class RunConfig:
-    use_firecrawl: bool
+    # Site-search fallback provider for this run: "tinyfish" | "firecrawl" | "tavily" | None (off).
+    site_search: str | None
     use_parallel_enrichment: bool
     lookback_months: int
     llm_backend: str
@@ -994,13 +1093,15 @@ class RunConfig:
     gemini_key: str | None
     context: ClientContext
     max_results: int = DEFAULT_MAX_SEARCH_RESULTS
+    tinyfish_key: str | None = None
+    tavily_key: str | None = None
     # Where the 'agent' backend writes per-company raw evidence JSON for the agent to score.
     raw_evidence_dir: Path | None = None
-    # When set, Firecrawl website pages are read from {dir}/{domain}.json instead of
-    # being crawled via the Firecrawl API. Lets users without a FIRECRAWL_API_KEY supply
-    # pages crawled through the Firecrawl MCP (or any other means). No key required.
+    # When set, website pages are read from {dir}/{domain}.json instead of being fetched via a
+    # site-search API. Lets users without a provider key supply pages fetched via TinyFish,
+    # Firecrawl, or any other means (agent-driven route, SKILL.md Step 5c). No key required.
     firecrawl_pages_dir: Path | None = None
-    # The Firecrawl fallback pass (SKILL.md Step 5c): crawl only, no second paid web search.
+    # The site-search fallback pass (SKILL.md Step 5c): search only, no second paid web search.
     crawl_only: bool = False
 
 
@@ -1043,10 +1144,10 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
         raw_results = search_resp.get("results", []) if isinstance(search_resp, dict) else []
         raw_results, dropped_by_cutoff = filter_search_results_by_freshness(raw_results, cfg.lookback_months)
 
-    # Firecrawl website pages (optional). Two routes:
-    #  (a) firecrawl_pages_dir set -> read pre-crawled pages from {dir}/{domain}.json
-    #      (e.g. crawled via the Firecrawl MCP). No FIRECRAWL_API_KEY required.
-    #  (b) use_firecrawl -> native crawl via the Firecrawl API (needs FIRECRAWL_API_KEY).
+    # Site-search website pages (optional). Two routes:
+    #  (a) firecrawl_pages_dir set -> read pre-fetched pages from {dir}/{domain}.json
+    #      (e.g. fetched via TinyFish or the Firecrawl MCP by the agent). No API key required.
+    #  (b) site_search set -> the script's own site search via the matching provider + key.
     pages: list[dict] = []
     if cfg.firecrawl_pages_dir:
         pf = cfg.firecrawl_pages_dir / f"{company_domain}.json"
@@ -1056,16 +1157,14 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
                 pages = loaded if isinstance(loaded, list) else []
             except (json.JSONDecodeError, OSError):
                 pages = []
-    elif cfg.use_firecrawl and cfg.firecrawl_key:
-        crawl_id = firecrawl_start_crawl(
-            website, cfg.context.signal_hint, cfg.lookback_months, cfg.firecrawl_key,
-        )
-        if crawl_id:
-            crawl_result = firecrawl_wait_for_completion(crawl_id, cfg.firecrawl_key)
-            if crawl_result:
-                pages = crawl_result.get("data", [])
-    # Every crawled URL, the dropped ones too: its length is the Firecrawl credits spent, and it is
-    # the only way to tell afterwards whether the crawl picked the wrong pages or the site had nothing.
+    elif cfg.site_search == "firecrawl" and cfg.firecrawl_key:
+        pages = firecrawl_site_search(company_domain, cfg.lookback_months, cfg.firecrawl_key)
+    elif cfg.site_search == "tinyfish" and cfg.tinyfish_key:
+        pages = tinyfish_site_search(company_domain, cfg.lookback_months, cfg.tinyfish_key)
+    elif cfg.site_search == "tavily" and cfg.tavily_key:
+        pages = tavily_site_search(company_domain, cfg.lookback_months, cfg.tavily_key)
+    # Every crawled URL, the dropped ones too: its length is the site-search credits spent, and it
+    # is the only way to tell afterwards whether the search picked the wrong pages or had nothing.
     urls_crawled = [(p.get("metadata") or {}).get("sourceURL") or (p.get("metadata") or {}).get("url") for p in pages]
     if pages:
         pages = filter_crawl_pages_by_freshness(pages, cfg.lookback_months)
@@ -1144,15 +1243,19 @@ def parse_args() -> argparse.Namespace:
                    help="Override input CSV (default: csv/input/companies_raw.csv)")
     p.add_argument("--output-csv", type=Path,
                    help="Override output CSV (default: csv/intermediate/signals.csv)")
+    p.add_argument("--site-search", choices=["tinyfish", "firecrawl", "tavily"], default=None,
+                   help="Site-search fallback provider for --crawl-only (SKILL.md Step 5c): recent "
+                        "pages from the company's own domain incl. subdomains. tinyfish = free; "
+                        "firecrawl ≤ 7 credits/company; tavily 1 credit/company.")
     p.add_argument("--firecrawl", action="store_true",
-                   help="Enable Firecrawl website crawl via the Firecrawl API (needs FIRECRAWL_API_KEY)")
+                   help="Alias for --site-search firecrawl (kept for old callers).")
     p.add_argument("--firecrawl-pages-dir", type=Path,
-                   help="Read pre-crawled Firecrawl pages from {dir}/{domain}.json instead of "
-                        "calling the Firecrawl API. Use when you only have Firecrawl via MCP "
-                        "(no FIRECRAWL_API_KEY): the agent crawls and writes the page files.")
+                   help="Read fetched pages from {dir}/{domain}.json instead of calling a "
+                        "site-search API. Use when you only have TinyFish or Firecrawl via MCP "
+                        "(no API key): the agent fetched and writes the page files.")
     p.add_argument("--crawl-only", action="store_true",
-                   help="Firecrawl fallback pass (SKILL.md Step 5c): no web search. Needs --firecrawl or "
-                        "--firecrawl-pages-dir. Writes signals_crawl.csv + signals_raw_crawl/, so the "
+                   help="Site-search fallback pass (SKILL.md Step 5c): no web search. Needs --site-search "
+                        "or --firecrawl-pages-dir. Writes signals_crawl.csv + signals_raw_crawl/, so the "
                         "first pass is kept.")
     p.add_argument("--parallel-enrichment", action="store_true",
                    help="Enable Parallel structured enrichment (extra cost; useful for funding/hiring data points)")
@@ -1194,8 +1297,10 @@ def main() -> int:
         print(f"ERROR: client dir does not exist: {client_dir}", file=sys.stderr)
         return 1
 
-    if args.crawl_only and not (args.firecrawl or args.firecrawl_pages_dir):
-        print("ERROR: --crawl-only needs --firecrawl or --firecrawl-pages-dir", file=sys.stderr)
+    site_search = args.site_search or ("firecrawl" if args.firecrawl else None)  # --firecrawl is an alias
+    if args.crawl_only and not (site_search or args.firecrawl_pages_dir):
+        print("ERROR: --crawl-only needs --site-search {tinyfish,firecrawl,tavily} or --firecrawl-pages-dir",
+              file=sys.stderr)
         return 1
     suffix = "_crawl" if args.crawl_only else ""  # the fallback pass never overwrites the first
     input_csv = args.input_csv or (client_dir / "csv" / "input" / "companies_raw.csv")
@@ -1213,6 +1318,8 @@ def main() -> int:
     parallel_key = os.environ.get("PARALLEL_API_KEY", "")
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
     firecrawl_key = os.environ.get("FIRECRAWL_API_KEY", "")
+    tinyfish_key = os.environ.get("TINYFISH_API_KEY", "")
+    tavily_key = os.environ.get("TAVILY_API_KEY", "")
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     # OpenRouter is a dormant legacy backend: the code is kept (for `main`) but is
     # inert unless deliberately re-enabled. Passing --llm-backend openrouter is not
@@ -1230,8 +1337,14 @@ def main() -> int:
         missing_keys.append("PARALLEL_API_KEY")
     if args.llm_backend == "openrouter" and not openrouter_key:
         missing_keys.append("OPENROUTER_API_KEY (required for --llm-backend openrouter)")
-    if args.firecrawl and not args.firecrawl_pages_dir and not firecrawl_key:
-        missing_keys.append("FIRECRAWL_API_KEY (required for --firecrawl without --firecrawl-pages-dir)")
+    # The missing-key check covers only the provider actually selected.
+    if site_search and not args.firecrawl_pages_dir:
+        if site_search == "firecrawl" and not firecrawl_key:
+            missing_keys.append("FIRECRAWL_API_KEY (required for --site-search firecrawl without --firecrawl-pages-dir)")
+        elif site_search == "tinyfish" and not tinyfish_key:
+            missing_keys.append("TINYFISH_API_KEY (required for --site-search tinyfish)")
+        elif site_search == "tavily" and not tavily_key:
+            missing_keys.append("TAVILY_API_KEY (required for --site-search tavily)")
     if missing_keys and not args.dry_run:
         print(f"ERROR: missing env vars: {', '.join(missing_keys)}", file=sys.stderr)
         return 1
@@ -1241,14 +1354,14 @@ def main() -> int:
     if args.limit:
         rows = rows[: args.limit]
 
-    firecrawl_mode = (
+    site_search_mode = (
         f"PAGES-DIR ({args.firecrawl_pages_dir})" if args.firecrawl_pages_dir
-        else ("API" if args.firecrawl else "OFF")
+        else (site_search.upper() if site_search else "OFF")
     )
     print(f"Loaded {len(rows)} companies from {input_csv}")
     print(f"Sources enabled: web_search={'OFF (crawl-only)' if args.crawl_only else 'ON'} "
           f"(max_results={args.max_results}), "
-          f"firecrawl={firecrawl_mode}, "
+          f"site_search={site_search_mode}, "
           f"parallel_enrichment={'ON' if args.parallel_enrichment else 'OFF'}")
     print(f"LLM backend: {args.llm_backend}")
     if args.llm_backend == "agent":
@@ -1269,7 +1382,7 @@ def main() -> int:
     raw_evidence_dir = args.raw_evidence_dir or (client_dir / "csv" / "intermediate" / f"signals_raw{suffix}")
 
     cfg = RunConfig(
-        use_firecrawl=args.firecrawl,
+        site_search=site_search,
         use_parallel_enrichment=args.parallel_enrichment,
         lookback_months=args.lookback_months,
         llm_backend=args.llm_backend,
@@ -1285,6 +1398,8 @@ def main() -> int:
         gemini_key=gemini_key or None,
         context=context,
         max_results=args.max_results,
+        tinyfish_key=tinyfish_key or None,
+        tavily_key=tavily_key or None,
         firecrawl_pages_dir=args.firecrawl_pages_dir,
         crawl_only=args.crawl_only,
         raw_evidence_dir=raw_evidence_dir if args.llm_backend == "agent" else None,
