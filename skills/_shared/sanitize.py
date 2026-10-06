@@ -22,6 +22,7 @@ import csv
 import json
 import re
 import sys
+import unicodedata
 from datetime import datetime, timedelta
 from urllib.parse import urlsplit
 
@@ -111,11 +112,13 @@ ROLE_LOCALS = {
 }
 _FOLD = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "å": "aa", "æ": "ae",
                        "ø": "oe", "é": "e", "è": "e", "ê": "e", "á": "a", "à": "a", "í": "i",
-                       "ó": "o", "ú": "u", "ñ": "n", "ç": "c"})
+                       "ó": "o", "ú": "u", "ñ": "n", "ç": "c", "đ": "d", "ł": "l"})
 
 
 def _fold(text: str) -> str:
-    return re.sub(r"[^a-z]", "", str(text or "").lower().translate(_FOLD))
+    # German/Nordic letters first (ü → ue), then strip any other accent (š → s, ặ → a)
+    text = unicodedata.normalize("NFC", str(text or "")).lower().translate(_FOLD)
+    return re.sub(r"[^a-z]", "", unicodedata.normalize("NFKD", text))
 
 
 def email_owner_score(name: str, email: str) -> int | None:
@@ -199,7 +202,9 @@ def _signal_is_valid(sig: dict, cutoff: datetime | None) -> bool:
     if not isinstance(sig, dict):
         return False
     url = sig.get("source_url") or sig.get("source") or sig.get("url") or ""
-    if not str(url).startswith("http") or not is_article_url(url):
+    # a job change can only be read off the person's own profile, so for that type the profile is the source
+    own_profile = sig.get("type") == "job_change" and "linkedin.com/in/" in str(url)
+    if not str(url).startswith("http") or not (is_article_url(url) or own_profile):
         return False
     raw_date = str(sig.get("date") or sig.get("published_at") or "").strip()
     dt = None

@@ -32,7 +32,8 @@ language ("Deutschland"). An address ships only with `email_status` `valid` or `
   "email_subject": "…", "email_p1": "Guten Tag Herr X,\nhook", "email_p2": "bridge + offer",
   "email_p3": "CTA\nViele Grüße\nName", "li_p1": "Guten Tag Herr X,\nhook", "li_p2": "offer + CTA"}}
 ```
-No kept address → the four `email_*` fields are empty. CTA `A` ends with "?", `B` does not.
+No kept address → the four `email_*` fields are empty. Both CTA variants are yes/no questions offering
+something free (`A` and `B` offer different things); none asks for a call (SKILL.md Step 6).
 
 **`context/deck.json`** — the deck's own copy:
 ```json

@@ -5,6 +5,8 @@ from common import contacts, deck_config, has_address, messages, signals
 from sanitize import sanitize_rows
 
 cfg, msgs, sigs = deck_config(), messages(), signals()
+# a job change is known to the month only: show YYYY-MM (the signal keeps YYYY-MM-01 for sanitize's freshness check)
+shown_date = lambda sig: sig.get("date", "")[:7] if sig.get("type") == "job_change" else sig.get("date", "")
 titles = {s["key"]: s["title"] for s in cfg["segments"]}
 rows, deck = [], []
 for c in contacts():
@@ -21,7 +23,7 @@ for c in contacts():
         "job_title": m["job_title"], "company_name": c["company_name"], "company_domain": c["company_domain"],
         "location": c["country"], "linkedin_url": c["linkedin_profile_url"], "email": email,
         "email_status": c["email_status"] if kept else "", "why_they_fit": m["why_they_fit"],
-        "signal_text": (sig or {}).get("summary", ""), "signal_date": (sig or {}).get("date", ""),
+        "signal_text": (sig or {}).get("summary", ""), "signal_date": shown_date(sig or {}),
         "signal_source_url": (sig or {}).get("source_url", ""),
         "signal_source_label": (sig or {}).get("source_url", "").split("/")[2].removeprefix("www.") if sig else "",
         "cta_variant": m["cta_variant"], "lang": m["lang"].upper(), "email_subject": m["email_subject"] if kept else "",
@@ -31,7 +33,7 @@ clean, report = sanitize_rows(rows, email_policy="standard", require_email=False
 out = []
 for r in clean:
     sig = (json.loads(r.pop("scored_signals", "[]") or "[]") or [{}])[0]
-    r.update(signal=sig.get("summary", ""), signal_date=sig.get("date", ""), signal_source=sig.get("source_url", ""))
+    r.update(signal=sig.get("summary", ""), signal_date=shown_date(sig), signal_source=sig.get("source_url", ""))
     out.append(r)
 blanked = {r["linkedin_url"] for r in out if not r["email"]}
 for d in deck:  # the deck shows exactly what survived sanitize

@@ -3,11 +3,14 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sanitize import email_owner_score, sanitize_rows, wrong_person_emails
+from sanitize import _signal_is_valid, email_owner_score, sanitize_rows, wrong_person_emails
 
 assert email_owner_score("Karl Horst", "khorst@bau-ko.de") == 2
 assert email_owner_score("Bernd Baum", "khorst@bau-ko.de") == 0
 assert email_owner_score("Sven Weißer", "sweisser@jagd-shop.de") == 2      # ß folds to ss
+assert email_owner_score("Dušan Kovač", "dusan@example.com") == 2          # š strips to s
+assert email_owner_score("Đặng Thu", "dang@example.vn") == 2              # đ, ặ (Vietnamese)
+assert email_owner_score("Jürgen Kahl", "juergen@example.de") == 2        # ü still → ue
 assert email_owner_score("Christoph Brenner", "christoph.brenner@bergsport.eu") == 2
 assert email_owner_score("Jane Doe", "jd@acme.de") == 1                        # initials
 assert email_owner_score("Jane Doe", "info@acme.de") is None                   # role mailbox
@@ -46,3 +49,8 @@ assert [r["full_name"] for r in clean] == ["Eva Echt", "Tom Riskant"], clean
 assert report["rows_dropped_bad_email"] == 2, report
 
 print("ok")
+
+# a job change cites the person's own profile; for any other signal type a profile is not a source
+job_change = {"type": "job_change", "source_url": "https://www.linkedin.com/in/jane-doe", "date": "2026-09-01"}
+assert _signal_is_valid(job_change, None)
+assert not _signal_is_valid({**job_change, "type": "funding"}, None)

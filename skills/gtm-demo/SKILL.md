@@ -258,6 +258,11 @@ Run **contact-filter** on the contacts found. Even small batches benefit from IC
 
 For demos: use a relaxed hard-reject threshold (allow tiers 1–5 to pass), prioritize ranking over filtering.
 
+**Then take each company's name from its own homepage:** `python3 ~/.claude/skills/gtm-pipeline/_shared/company_name.py
+csv/intermediate/contacts_filtered.csv`. A finder's name field is not the company's name (BetterContact returns
+"Wealthcom" for wealth.com and "Cover genius"), and every later step, the signal search above all, searches by it.
+Fix the rows it lists under "check by hand".
+
 ---
 
 ## Step 5 — People Enrichment (Email Only)
@@ -371,6 +376,18 @@ export $(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY|TINYFISH_API_KEY|FIRECRA
 
 The `resolve_env.sh` source line ensures `$GTM_ENV_PATH` is set even in a fresh shell (see signal-search SKILL.md / conventions). For the demo, leave Parallel enrichment **OFF**. After scoring, run the **site-search fallback** (signal-search Step 5c, `--crawl-only --site-search tinyfish`, free) on the companies left without a kept signal: at most 5 pages each, scored with the same rubric. `firecrawl` (≤ 7 credits per company) and `tavily` (1 credit) are selectable for comparison. Every company it turns up a signal for moves from ICP-first to Signal-first.
 
+**LinkedIn topic posts are optional, off by default, and interactive only** (headless: never). Use them when the
+client's best signal is people posting about a topic *and* the operator asks for it.
+- **Search:** Pipe0 `posts:crustdata@1` searches LinkedIn posts by keyword, with no login. Set `keywords` (at most 6),
+  `posted_within: past-month`, and `author_company_profile_urls` to the final companies' LinkedIn pages (take each
+  page from the company's own homepage). Use `limit: 3` per company, at most 10 companies.
+- **Cost:** 2 credits per post, and empty runs are free. Call it with curl, because Cloudflare rejects Python's HTTP
+  client.
+- **Learning (2026-10-06):** 10 D2C brands gave 4 posts and none from the brand's own team. The company filter also
+  returns people who don't work there, so check `actor_headline`. One post, by the client's founder, showed that a
+  target was already a customer.
+- Not used in demos for now: the provider does not say how it collects posts, so the legal risk is high.
+
 ### Merge signals back into contacts
 
 ```python
@@ -416,7 +433,7 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 | Hook | Reference something specific to this person (post, career move, company signal) | 1 sentence |
 | Bridge | Connect their situation to your offer | 1 sentence |
 | Offer | What you provide, clearly stated | 1 sentence |
-| CTA | Soft ask — not "let's schedule a call" | 1 sentence |
+| CTA | A yes/no question that offers something free for a one-word reply. Never a call | 1 sentence |
 
 **Total: 320–450 characters.** No blank line after greeting. Paragraphs separated by single line break.
 
@@ -433,6 +450,20 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 - Generic observations ("impressive background", "I noticed you're in [industry]")
 - Corporate jargon or buzzwords
 - Pushy CTAs ("Let's schedule a call this week")
+
+**The CTA is a free offer, asked as a question.** A first message never asks for a call, a meeting or "einen
+kurzen Austausch". It ends with a yes/no question that offers something for a one-word reply, for example:
+- "Soll ich dir mal Beispiele schicken?"
+- "Soll ich dir skizzieren, wie das bei euch aussehen würde?"
+- "Soll ich dir die Case Study von <Kunde> schicken?"
+
+Variants A and B offer two **different** free offers; that is the A/B test. Both are questions. A statement such as
+"Ich schicke dir gern zwei Beispiele." or "nehmt uns gern mit auf die Liste" asks for nothing and gets no reply.
+
+**The LinkedIn message must make sense on its own.** It is shorter than the email, but the reader still has to see
+why you write to them, what you offer in plain words and what you ask. Three product facts plus "Kurz anschauen?"
+reads as "what does he want?". Add a sentence where the why or the what is missing. Don't pad a message that already
+does all three.
 
 **If Step 5.5 ran:** for each contact, prefer the highest-scored signal from `company_scored_signals` as the hook over generic LinkedIn-post references. A score >= 70 signal anchored in real recent news is the strongest hook the demo can produce.
 

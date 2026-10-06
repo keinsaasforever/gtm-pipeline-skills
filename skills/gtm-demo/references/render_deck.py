@@ -29,6 +29,9 @@ para = lambda s: e(s).replace("\n", "<br>")
 
 
 def fmt_date(d):
+    if len(d) == 7:  # YYYY-MM: month-level date (a job change's start month)
+        y, m = map(int, d.split("-"))
+        return f"{L['months'][m - 1]} {y}"
     y, m, dd = map(int, d[:10].split("-"))
     return f"{dd}. {L['months'][m - 1]} {y}" if cfg["lang"] == "de" else f"{L['months'][m - 1]} {dd}, {y}"
 

@@ -8,6 +8,8 @@ cfg, msgs, errs, hooks = deck_config(), messages(), [], []
 INFORMAL = re.compile(r"\b(du|dich|dir|dein\w*|euch|euer\w*)\b", re.I)
 FORMAL = re.compile(r"(?<=[a-zäöüß,] )(Sie|Ihnen|Ihre?[mnrs]?)\b")  # mid-sentence only: a capital at sentence start can be "they"
 BANNED = re.compile(r"linkedin|phantom|fullenrich|pipe0|bettercontact|kitt|firecrawl|gefunden|revolution|gamechanger", re.I)
+# a first message never asks for a call or meeting (Step 6): the CTA offers something free instead
+CALL_ASK = re.compile(r"\b(termin\w*|telefon\w*|gespräch\w*|austausch|meeting\w*|call|calls|zoom|kurz sprechen|hop on|jump on)\b", re.I)
 for c in contacts():
     key, who = c["linkedin_profile_url"], c["company_name"]
     m = msgs.get(key)
@@ -27,7 +29,9 @@ for c in contacts():
     if lang == "de" and reg == "du" and FORMAL.search(text): errs.append(f"{who}: formal '{FORMAL.search(text).group()}' in a Du draft")
     li = len(m["li_p1"]) + 1 + len(m["li_p2"])
     if li > 400: errs.append(f"{who}: LinkedIn {li} > 400")
-    if (m["cta_variant"] == "A") != m["li_p2"].rstrip().endswith("?"): errs.append(f"{who}: LinkedIn CTA form != {m['cta_variant']}")
+    li_cta = re.split(r"(?<=[.?])\s+", m["li_p2"].strip())[-1]
+    if not li_cta.endswith("?"): errs.append(f"{who}: LinkedIn CTA is not a question")
+    if CALL_ASK.search(li_cta): errs.append(f"{who}: LinkedIn CTA asks for a call '{CALL_ASK.search(li_cta).group()}'")
     li_hook = m["li_p1"].split("\n", 1)[-1]
     hooks.append(("li", li_hook))
     if has_address(c):
@@ -40,7 +44,8 @@ for c in contacts():
         if not 320 <= body <= 450: errs.append(f"{who}: email body {body} not in 320-450")
         if li >= len(m["email_p1"]) + len(m["email_p2"]) + len(m["email_p3"]): errs.append(f"{who}: LinkedIn not shorter than email")
         if hook.strip() == li_hook.strip(): errs.append(f"{who}: LinkedIn hook copies the email hook")
-        if (m["cta_variant"] == "A") != cta.rstrip().endswith("?"): errs.append(f"{who}: email CTA form != {m['cta_variant']}")
+        if not cta.rstrip().endswith("?"): errs.append(f"{who}: email CTA is not a question")
+        if CALL_ASK.search(cta): errs.append(f"{who}: email CTA asks for a call '{CALL_ASK.search(cta).group()}'")
         hooks.append(("email", hook))
     elif m.get("email_subject") or m.get("email_p1"):
         errs.append(f"{who}: email draft on a card without a kept address")
