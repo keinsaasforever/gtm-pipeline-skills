@@ -122,7 +122,7 @@ Use the MCP route when this machine has Firecrawl only via MCP and no `FIRECRAWL
 # Resolve the .env path (from $GTM_ENV_PATH, else _shared/local.md, else ~/.env.gtm),
 # then inject only the keys this run needs. Default backend "agent" needs ONLY PARALLEL_API_KEY.
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-export $(grep -E '^(PARALLEL_API_KEY|FIRECRAWL_API_KEY)=' "$GTM_ENV_PATH" | xargs) && \
+while IFS= read -r line; do export "$line"; done < <(grep -E '^(PARALLEL_API_KEY|FIRECRAWL_API_KEY)=' "$GTM_ENV_PATH") && \
   python3 ~/.claude/skills/gtm-signal-search/signal_search.py \
     --client-dir {client-slug}-gtm \
     --limit 5 \

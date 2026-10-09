@@ -41,7 +41,7 @@ INTERNAL_PREFIXES = ("fe_", "bc_", "pipe0_", "_", "provider_", "raw_")
 # Statuses are normalized to UPPER_SNAKE before comparison. The real anti-"made-up-address"
 # guard is the domain-identity cross-check upstream (people-enrichment) — this is the last net.
 EMAIL_POLICIES = {
-    # keinsaas default: keep deliverable, high-probability, and catch-all (usually usable on
+    # default: keep deliverable, high-probability, and catch-all (usually usable on
     # corporate domains); drop unknown/risky/invalid/undeliverable.
     "standard": {"DELIVERABLE", "VALID", "HIGH_PROBABILITY", "CATCH_ALL", "ACCEPT_ALL"},
     # strict: also drop catch-all.
@@ -50,7 +50,7 @@ EMAIL_POLICIES = {
     "any": None,
 }
 
-DASH_RE = re.compile(r"\s*[—–]\s*")  # em/en dash → comma+space (keinsaas German rule)
+DASH_RE = re.compile(r"\s*[—–]\s*")  # em/en dash → comma+space (house style)
 
 
 def normalize_status(status: str) -> str:
@@ -68,7 +68,7 @@ def email_ok(status: str, email: str, policy: str) -> bool:
 
 
 def clean_text(text: str) -> str:
-    """Collapse whitespace and replace em/en dashes (keinsaas style: dashes → comma)."""
+    """Collapse whitespace and replace em/en dashes (house style: dashes → comma)."""
     if text is None:
         return ""
     t = DASH_RE.sub(", ", str(text))

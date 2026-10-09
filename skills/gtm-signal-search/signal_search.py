@@ -71,7 +71,7 @@ GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{
 # kept available for `main` (needs OPENROUTER_API_KEY). See SKILL.md "Model routing".
 DEFAULT_LLM_BACKEND = "agent"
 # claude-cli backend: model aliases resolve to the latest of each tier (no version pinning →
-# low maintenance). Opus for the judgement-heavy extraction + scoring (keinsaas routing).
+# low maintenance). Opus for the judgement-heavy extraction + scoring.
 DEFAULT_CLAUDE_EXTRACT_MODEL = "opus"
 DEFAULT_CLAUDE_SCORING_MODEL = "opus"
 # Legacy OpenRouter path (used ONLY by --llm-backend openrouter; not a default). Kept for `main`.

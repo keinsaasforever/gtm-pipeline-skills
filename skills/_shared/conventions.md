@@ -127,7 +127,7 @@ These rules apply to every skill in the pipeline:
 4. **LLM/judgement work is done by the agent** — extraction, scoring, filtering, and message generation run in-context (or via model-routed subagents), never via a third-party LLM API on the default path. See **Model Routing**. Do not silently swap models.
 5. **Never re-run before reviewing** — do not waste credits on duplicate runs
 6. **Save all API output fields in `intermediate/`** — never drop columns from API responses there. The **lead-facing `output/` view is sanitized** (see Output Sanitization): provenance, statuses, and empty columns are stripped there, not in intermediate.
-7. **API keys via runtime injection** — never read `.env` files into context. Use: `export $(grep KEY_NAME /path/.env | xargs) && python3 script.py`
+7. **API keys via runtime injection** — never read `.env` files into context. Use: `while IFS= read -r line; do export "$line"; done < <(grep '^KEY_NAME=' /path/.env) && python3 script.py`. It exports line by line, so a value with spaces (a path under `.../My Projects (Remote)/...`) stays whole; `export $(grep … | xargs)` splits it.
 8. **Cloudflare-fronted APIs: use curl** — Pipe0, BetterContact, and FullEnrich reject Python `requests`/`urllib` (Cloudflare blocks the TLS/UA signature, error 1010). Always call them with `curl` + a browser `User-Agent`. Never regenerate a urllib-based provider script.
 9. **Max 100 contacts per batch** — all enrichment providers (Pipe0, BC, FE)
 10. **Global domains require location filter** — BetterContact with `.com` for global brands returns worldwide results. Always add `lead_location` filter. Local ccTLD domains (`.co.za`, `.de`) are safe without it.
@@ -257,14 +257,17 @@ source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh"
 Never read the .env file with the Read tool. Always inject keys at runtime via Bash, after sourcing the resolver:
 ```bash
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-  export $(grep -E '^KEY_NAME=' "$GTM_ENV_PATH" | xargs) && python3 script.py
+  while IFS= read -r line; do export "$line"; done < <(grep -E '^KEY_NAME=' "$GTM_ENV_PATH") && python3 script.py
 ```
 
 To inject multiple keys at once (anchor patterns with `^` so values can't match):
 ```bash
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-  export $(grep -E '^(PIPE0_API_KEY|FULLENRICH_API_KEY|BETTERCONTACT_API_KEY|PARALLEL_API_KEY|SERPAPI_API_KEY|APIFY_API_KEY)=' "$GTM_ENV_PATH" | xargs) && python3 script.py
+  while IFS= read -r line; do export "$line"; done < <(grep -E '^(PIPE0_API_KEY|FULLENRICH_API_KEY|BETTERCONTACT_API_KEY|PARALLEL_API_KEY|SERPAPI_API_KEY|APIFY_API_KEY)=' "$GTM_ENV_PATH") && python3 script.py
 ```
+
+Each line is exported as it stands, so a value with spaces stays whole; keep values unquoted in the `.env`
+(quotes would become part of the value).
 
 | Variable | Service | Used by |
 |----------|---------|---------|

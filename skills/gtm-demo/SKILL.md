@@ -113,6 +113,13 @@ Recommended flow:
 1. FullEnrich v2 (email) — all contacts
 2. Pipe0 waterfall — for FE misses only
 
+**One address, one person.** A provider can return the same address for two people at one company
+(one mailbox for two "Scott"s), so check addresses across contacts before Step 7: a shared address
+stays only with the person a source ties it to (their name in the local part, `scott.clay@` for
+Scott Clay, or a page that pairs the name and the address, such as the company's team page);
+otherwise drop it from both. A contact that loses its address keeps its card, LinkedIn draft only,
+with the `est-warn` badge.
+
 Additional enrichment for message personalization (if available):
 - LinkedIn headline and summary (from LinkedIn scrape via PhantomBuster)
 - Recent LinkedIn posts (2–3 per contact) — significantly improves message quality
@@ -170,7 +177,7 @@ with open('csv/output/contacts_enriched.csv') as f, open('csv/input/companies_ra
 
 # Run signal-search on the unique companies
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-export $(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY|FIRECRAWL_API_KEY|GEMINI_API_KEY)=' "$GTM_ENV_PATH" | xargs) && \
+while IFS= read -r line; do export "$line"; done < <(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY|FIRECRAWL_API_KEY|GEMINI_API_KEY)=' "$GTM_ENV_PATH") && \
   python3 ~/.claude/skills/gtm-signal-search/signal_search.py \
     --client-dir {client-slug}-gtm
 ```
@@ -288,13 +295,14 @@ result to `csv/output/`.
    template `deck_template.html`** (in this skill's directory) and fill every `{{TOKEN}}`; do
    not hand-copy a prior client's deck or restyle from scratch. Drive it from the sanitized CSV +
    `context/` files. Assemble with the **sonnet** model. Deck anatomy (all baked into the template):
-   - **Header + hero + 4 stat tiles**, then segment blocks. Group contacts into **Signal-first**
+   - **Header + hero + 4 stat tiles** (3 when no card has a signal: delete the signal tile), then segment blocks. Group contacts into **Signal-first**
      (fresh, sourced buying signal ≤ 60d → `sig-hot` red signal box with a live `.sigsrc` source
      link + date) and **ICP-first** (strong fit, no live signal → `sig-fit` blue "why they fit"
      box, no source link). Use `.approach` blocks to frame each group; `.seg-meta` for counts.
    - Each card = collapsible `<details class="lead">`: favicon, company + domain, attribute tags
-     (`tag-sig`/`tag-icp` + language `tag-lang`), the signal/fit box, the decision-maker with
-     LinkedIn + email and a deliverability badge (`est-ok` = verified email, `est-warn`
+     (`tag-sig`/`tag-icp` + language `tag-lang`), the signal/fit box, the contact with
+     LinkedIn + email (`{{CONTACT_LABEL}}` says what the evidence supports, e.g. "Spirits buyer" or
+     "Partner"; "Decision-maker" only when the person is one) and a deliverability badge (`est-ok` = verified email, `est-warn`
      "on request" when no email — in that case **drop the email draft, keep only the LinkedIn
      draft**), and the message draft (email subject + body, then LinkedIn) with an A/B `cta-chip`.
    - **List bar** carries a **Download-CSV button** (`.dl`) beside the Expand-all toggle; the
@@ -308,6 +316,9 @@ result to `csv/output/`.
    - **Hero = hook, not manual.** `{{HERO_HEADLINE}}` short (≤ ~7 words), outcome-first, no jargon;
      `{{HERO_INTRO}}` 1–2 short sentences on what they *get* (ready-to-send outreach to the right
      people), never how the pipeline works. Intrigue, don't overwhelm with technical detail.
+   - **Zero signals never show.** No "0 with a fresh buying signal" tile, and no hero, method-note,
+     footer or `.seg-meta` line that states a zero or "no signal" count; write the ICP approach block
+     as what the cards open with, not as the absence of a signal. A count of 1 or more shows as usual.
    - **Never name a third-party tool or data provider** anywhere in the rendered deck (no enrichment
      vendor, search/scrape provider, or phone/email finder). A signal's source link cites the
      *original publication* (press release, careers page, news outlet), not the tool that found it.
@@ -324,7 +335,8 @@ every signal card has a live source link + date; **zero empty fields / placehold
 em-dashes; one email + one LinkedIn draft per verified-email card (LinkedIn-only for `est-warn`
 cards) within char caps. **No third-party tool / data-provider name** appears in the rendered text
 (grep the visible copy for enrichment/search/scrape vendor names — none allowed; the lead's own
-LinkedIn link is the only exception). **German decks use Du-form** — flag any `Sie/Ihr/Ihnen`
+LinkedIn link is the only exception). **No address may appear on two cards** (Step 5). **No zero
+signal count** ("0 … signal") in the visible text. **German decks use Du-form** — flag any `Sie/Ihr/Ihnen`
 formal-address forms. **Hero is tight** — `{{HERO_HEADLINE}}` ≤ ~7 words and `{{HERO_INTRO}}` ≤ 2
 sentences with no pipeline/sourcing detail. Also assert the deck's plumbing survived templating: the
 **Download-CSV button** (`id="dl"`) with a non-empty `CSV` string, the **footer CTA** (`.cta-btn`),
@@ -342,6 +354,8 @@ generated_message, char_count, has_posts
 
 Messages saved separately to `csv/output/messages.csv`. **Delivery is gated** — write the cover
 email to a file; never send on the user's behalf without explicit go-ahead (`conventions.md` #12).
+**The cover email never states a zero signal count** or that no signal was found: with no signal
+card it talks about the fit and the drafts. The run log may still give the count.
 
 ---
 

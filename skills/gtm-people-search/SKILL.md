@@ -237,7 +237,7 @@ https://docs.fullenrich.com/api/v2/people/search/post
 {
   "filters": {
     "company": {
-      "include": ["virginactive.co.za"]
+      "include": ["acme.co.za"]
     },
     "lead_location": {
       "include": ["South Africa"]
