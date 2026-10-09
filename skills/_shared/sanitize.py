@@ -100,10 +100,10 @@ def trim_to(text: str, limit: int) -> str:
 
 # ── Wrong-person addresses ──
 # A provider that cannot resolve someone often answers with a colleague's address, and it
-# passes every deliverability check because it is a real mailbox. Two contacts at BOC24 and
-# at Black Diamond shared one address that way in the Neocom demo (2026-09-23) — both were
+# passes every deliverability check because it is a real mailbox. Two contacts at each of two
+# companies shared one address that way in one demo (2026-09-23) — both were
 # graded "verified" and one of them would have mailed the wrong person. Shared mailboxes are
-# not the same thing, so role locals are exempt.
+# not the same thing, so role locals are exempt (unless exempt_roles=False).
 ROLE_LOCALS = {
     "info", "kontakt", "contact", "office", "mail", "email", "e-mail", "hello", "hallo", "hi",
     "sales", "vertrieb", "service", "support", "presse", "press", "marketing", "team", "post",
@@ -122,7 +122,8 @@ def _fold(text: str) -> str:
 
 
 def email_owner_score(name: str, email: str) -> int | None:
-    """How strongly an address points at this person: 2 a name part, 1 the initials, 0 nothing.
+    """How strongly an address points at this person: 1 + the name parts it contains, 1 the
+    initials, 0 nothing. scott.smith@ scores 3 for Scott Smith and 2 for Scott Miller.
 
     None means unknowable — no name, no address, or a role mailbox anyone may use."""
     local = str(email or "").split("@")[0].strip().lower()
@@ -130,18 +131,21 @@ def email_owner_score(name: str, email: str) -> int | None:
     if not local or not parts or local in ROLE_LOCALS:
         return None
     flat = _fold(local)
-    if any(len(_fold(p)) > 2 and _fold(p) in flat for p in parts):
-        return 2
+    found = sum(len(_fold(p)) > 2 and _fold(p) in flat for p in parts)
+    if found:
+        return 1 + found
     return 1 if flat and flat == "".join(_fold(p)[:1] for p in parts) else 0
 
 
-def wrong_person_emails(rows: list[dict], email_field: str, name_fields: tuple[str, ...]) -> dict:
+def wrong_person_emails(rows: list[dict], email_field: str, name_fields: tuple[str, ...],
+                        exempt_roles: bool = True) -> dict:
     """{row index: reason} for addresses that cannot be this contact's own.
 
     Only a SHARED address is acted on, because there the evidence is conclusive: one mailbox,
     two people, at most one owner. A lone address whose local part matches no part of the name
     is merely reported (`emails_name_mismatch`) — initials, nicknames and married names make it
-    too weak to drop on."""
+    too weak to drop on. `exempt_roles=False` (the demo's Kitt gate) also takes a shared role
+    mailbox off every contact: no name is in it, so it is nobody's own."""
     def name_of(row):
         for f in name_fields:
             if str(row.get(f, "")).strip():
@@ -151,7 +155,7 @@ def wrong_person_emails(rows: list[dict], email_field: str, name_fields: tuple[s
     by_address: dict[str, list[int]] = {}
     for i, row in enumerate(rows):
         address = str(row.get(email_field, "")).strip().lower()
-        if address and email_owner_score(name_of(row), address) is not None:
+        if address and (not exempt_roles or email_owner_score(name_of(row), address) is not None):
             by_address.setdefault(address, []).append(i)
 
     out: dict[int, str] = {}
@@ -162,8 +166,8 @@ def wrong_person_emails(rows: list[dict], email_field: str, name_fields: tuple[s
             if scores[idx[0]] == 0:
                 mismatched.append(f"{name_of(rows[idx[0]])} <{address}>")
             continue
-        best = max(scores.values())
-        owners = [i for i, sc in scores.items() if sc == best and sc > 0]
+        best = max(sc or 0 for sc in scores.values())
+        owners = [i for i, sc in scores.items() if sc == best and best > 0]
         keep = owners[0] if len(owners) == 1 else None
         for i in idx:
             if i != keep:
@@ -184,7 +188,7 @@ _LISTING_SEGMENTS = {
 def is_article_url(url: str) -> bool:
     """A signal must cite the article or post itself. A homepage, a news/press listing or a company
     profile only shows that something exists somewhere, and nobody can check the claim against it
-    (Klüh, 2026-09-18: a "signal" cited a LinkedIn company page from which the post had gone)."""
+    (a construction-supplier run, 2026-09-18: a "signal" cited a LinkedIn company page from which the post had gone)."""
     parts = urlsplit(str(url))
     segs = [s for s in parts.path.lower().split("/") if s]
     if segs and re.fullmatch(r"[a-z]{2}(-[a-z]{2})?", segs[0]):  # language prefix /en/, /de-de/

@@ -1,8 +1,8 @@
 # gtm-demo references — the scripts every demo run used to rewrite
 
 Copy nothing: run them in place from `{client-slug}-gtm/`, e.g.
-`python3 ~/.claude/skills/gtm-demo/references/check_messages.py`. They are the Sphere run (2026-09-24),
-generalized; the perma-trade and Reduzer runs each hand-wrote the same five scripts.
+`python3 ~/.claude/skills/gtm-demo/references/check_messages.py`. They are one demo run's scripts (2026-09-24),
+generalized; two earlier runs each hand-wrote the same five scripts. `python3 test_references.py` checks them end to end.
 
 | Step | Script | Reads | Writes |
 |---|---|---|---|
@@ -28,12 +28,14 @@ language ("Deutschland"). An address ships only with `email_status` `valid` or `
 ```json
 {"https://www.linkedin.com/in/…": {
   "job_title": "CTO", "why_they_fit": "timeless fit facts + the role, deck language",
-  "lang": "de", "register": "sie", "cta_variant": "A",
+  "contact_label": "", "lang": "de", "register": "sie", "cta_variant": "A",
   "email_subject": "…", "email_p1": "Guten Tag Herr X,\nhook", "email_p2": "bridge + offer",
   "email_p3": "CTA\nViele Grüße\nName", "li_p1": "Guten Tag Herr X,\nhook", "li_p2": "offer + CTA"}}
 ```
-No kept address → the four `email_*` fields are empty. Both CTA variants are yes/no questions offering
-something free (`A` and `B` offer different things); none asks for a call (SKILL.md Step 6).
+No kept address → the four `email_*` fields are empty. `contact_label` (optional) is the card's label for the
+person, what the evidence supports ("Spirits buyer", "Partner"); empty → "Entscheider" / "Decision-maker". When any
+card carries one, the first stat tile counts "Ansprechpartner" / "named contacts" instead of decision-makers.
+Both CTA variants are yes/no questions offering something free (`A` and `B` offer different things); none asks for a call (SKILL.md Step 6).
 
 **`context/deck.json`** — the deck's own copy:
 ```json
@@ -46,3 +48,6 @@ something free (`A` and `B` offer different things); none asks for a call (SKILL
  "cta_label": "Termin buchen", "signoff": {"de": "Viele Grüße\nName", "fr": "Meilleures salutations\nName"}}
 ```
 The booking link is fixed in `render_deck.py` (keinsaas's, always). Labels exist for `de` and `en`.
+**Zero signals never show:** a segment without a signal card drops the signal count from its meta line; with no
+signal card in the whole deck, `render_deck.py` also leaves out the signal stat tile and any sentence in the hero,
+method note or footer that states a zero or "no" signal count. `qa_deck.py` fails on a "0 … signal" text.

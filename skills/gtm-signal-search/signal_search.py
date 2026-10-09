@@ -142,8 +142,8 @@ def objective_bullets(signal_criteria: str) -> str:
 
     The file ends with a "Not a signal:" exclude block that names what to ignore — including,
     in a normal client file, the seller's own product ("evidence the company already uses X").
-    Interpolated into the objective, that turns the seller's name into a search term: the
-    Reduzer run (2026-09-17) got reduzer.com pages and the vendor's own Tracxn profile back as
+    Interpolated into the objective, that turns the seller's name into a search term: a
+    construction-software run (2026-09-17) got the seller's own pages and its Tracxn profile back as
     "evidence" for small Norwegian contractors. The exclude half still reaches extraction and
     scoring through build_include_exclude_block(); it just never reaches the query.
     """
@@ -704,7 +704,7 @@ def tavily_site_search(domain: str, lookback_months: int, api_key: str) -> list[
 # Freshness: the lookback cutoff is enforced on the evidence, before extraction or scoring
 # ────────────────────────────────────────────────────────────────────────────────
 #
-# Parallel's `after_date` only filters pages that carry a date. On the perma-trade run
+# Parallel's `after_date` only filters pages that carry a date. On a construction-supplier run
 # (2026-09-18) 143 of 175 results had none, and every stale event that reached a message hook
 # came in through them. Both real signals of that run were undated too, but their text carried a
 # date, so reading dates out of the text keeps them while the stale and undated pages go.
@@ -731,8 +731,8 @@ _DATE_PATTERNS = (  # (pattern, groups -> (year, month, day))
 
 def _slash_date(a: int, b: int, y: int) -> tuple[int, int, int]:
     """dd/mm/yyyy or mm/dd/yyyy. When both readings are real dates, the later one that is not in
-    the future: TRUMPF's en_US press page prints 09/02/2026 for 2 September (Sphere run,
-    2026-09-24), and reading it as 9 February dropped a real signal. Leaning fresh only keeps an
+    the future: a machine maker's en_US press page prints 09/02/2026 for 2 September (a machinery
+    run, 2026-09-24), and reading it as 9 February dropped a real signal. Leaning fresh only keeps an
     item for the scorer to read; it never drops one."""
     readings = []
     for day, month in ((a, b), (b, a)):
@@ -765,18 +765,18 @@ def dates_in(text: str) -> list[datetime]:
 def source_date(text: str, headline: str = "") -> datetime | None:
     """The date the source prints for its own item, not the page's technical stamp.
 
-    A provider's publish_date / publishedTime is often the crawl or rebuild date: HENSOLDT's
-    appointment of Sven Heursch (dated 01/09/2025 on the page) came back as 2026-09-22 on the
-    Sphere run (2026-09-24), and a MULTIVAC item from 2022 as 2026-09-06, because its sidebar
+    A provider's publish_date / publishedTime is often the crawl or rebuild date: a company's
+    appointment news (dated 01/09/2025 on the page) came back as 2026-09-22 on a machinery run
+    (2026-09-24), and another maker's item from 2022 as 2026-09-06, because its sidebar
     lists this week's news above the article. So: a date line right before the headline
-    ("28.07.2026 00:00 COMPACT SERIES"), else the first full date after the headline's first
+    ("28.07.2026 00:00 PRO LINE"), else the first full date after the headline's first
     appearance in the text, else the nearest one before it; without the headline in the text,
     the latest date. Future dates (deadlines, plans) never count. None = the text has no date."""
     now = datetime.utcnow()
     spans = [(pos, d) for pos, d in dated_spans(text) if d <= now]
     if not spans:
         return None
-    head = re.split(r"\s+[|–—-]\s+", headline or "")[0].strip()[:40]  # drop " | HENSOLDT", " - Lift Journal"
+    head = re.split(r"\s+[|–—-]\s+", headline or "")[0].strip()[:40]  # drop " | ACME", " - Trade Journal"
     at = (text or "").lower().find(head.lower()) if len(head) >= 12 else -1
     if at < 0:
         return max(d for _, d in spans)

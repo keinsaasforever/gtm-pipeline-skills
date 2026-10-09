@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Company display name from the company's own homepage, not from a finder's name field.
 
-BetterContact sentence-cases every company name ("Cover genius", "Einhell germany ag") and builds
-some from the domain ("Wealthcom" for wealth.com, "Yuno" for y.uno); 141 of 141 rows across four
-demos, 2026-10-01. That name then becomes the search term in signal-search and pulls in a
-different company (Wealthcome). FullEnrich returns LinkedIn display names and needs none of this.
+BetterContact sentence-cases every company name ("Harbor labs", "Acme germany ag") and builds
+some from the domain ("Fundwisecom" for fundwise.com); 141 of 141 rows across four demos,
+2026-10-01. That name then becomes the search term in signal-search and pulls in a
+different company with a similar name. FullEnrich returns LinkedIn display names and needs none of this.
 
     python3 company_name.py <in.csv> [<out.csv>]     # in place when out is omitted
 
@@ -19,7 +19,7 @@ import subprocess
 import sys
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-SEP = re.compile(r"\s*:\s+|\s+[|–—·•-]\s+")  # "Forage: SNAP…" has no space before the colon
+SEP = re.compile(r"\s*:\s+|\s+[|–—·•-]\s+")  # "Brightloop: Payments…" has no space before the colon
 META = re.compile(r"<meta\b[^>]*\b(?:property|name)\s*=\s*[\"'](?:og:site_name|application-name)[\"'][^>]*>", re.I)
 CONTENT = re.compile(r"\bcontent\s*=\s*[\"']([^\"']+)[\"']", re.I)
 TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
@@ -30,23 +30,23 @@ def _key(s):
 
 
 def _matches(name, root):
-    """The name IS the domain's brand: equal, inside it (Forage / joinforage), or it plus a short suffix
-    (Wealth.com / wealth, Global Health Limited / globalhealth). A bare substring is not enough:
-    'ro' is inside every second word."""
+    """The name IS the domain's brand: equal, inside it (Brightloop / getbrightloop), or it plus a short suffix
+    (Fundwise.com / fundwise, Northwind Health Limited / northwindhealth). A bare substring is not enough:
+    've' is inside every second word."""
     k = _key(name)
     return bool(k) and (k == root or (len(k) >= 3 and k in root) or (k.startswith(root) and len(k) <= len(root) + 8))
 
 
 def name_from_html(page, domain):
     host = domain.lower().removeprefix("www.")
-    roots = {_key(host.split(".")[0]), _key(host)}  # wealth, wealthcom; compasseducation for compass.education
+    roots = {_key(host.split(".")[0]), _key(host)}  # fundwise, fundwisecom; atlaseducation for atlas.education
     candidates = [CONTENT.search(m.group(0)) for m in META.finditer(page)]
     candidates = [html.unescape(c.group(1)).strip() for c in candidates if c]
     t = TITLE.search(page)
     if t:
         candidates += [s.strip() for s in SEP.split(html.unescape(" ".join(t.group(1).split())))]
     hits = [c for c in candidates if len(c) <= 40 and any(_matches(c, r) for r in roots)]
-    return min(hits, key=len) if hits else None  # "Compass Education" over "Compass Education AU"
+    return min(hits, key=len) if hits else None  # "Atlas Education" over "Atlas Education AU"
 
 
 def fetch(domain):

@@ -14,13 +14,15 @@ Ported from the live dashboard chain (`scaleway-jobs/_shared/enrich_providers.py
     also accepts unknown and learns its bounce rate later.
   - Losing the address never deletes the contact: the row keeps its name and LinkedIn URL,
     the deck shows the `est-warn` "on request" badge and drops the email draft.
+  - An address two contacts share stays only with the one person its local part names
+    (`sanitize.email_owner_score`); otherwise every contact loses it (status `shared`).
 
 The verdict lands in the status column, which is what `sanitize.py` filters on: its
-`standard` policy keeps VALID / VALID_RISKY and drops UNKNOWN / INVALID / UNVERIFIED, so
-the lead-facing CSV and deck come out clean with no extra wiring.
+`standard` policy keeps VALID / VALID_RISKY and drops UNKNOWN / INVALID / UNVERIFIED / SHARED,
+so the lead-facing CSV and deck come out clean with no extra wiring.
 
     source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-    export $(grep -E '^KITT_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+    while IFS= read -r line; do export "$line"; done < <(grep -E '^KITT_API_KEY=' "$GTM_ENV_PATH") && \
     python3 ~/.claude/skills/gtm-pipeline/_shared/kitt.py \
       --input  csv/intermediate/contacts_enriched.csv \
       --output csv/intermediate/contacts_kitt.csv
@@ -36,6 +38,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
+from sanitize import wrong_person_emails
+
 KITT_BASE = "https://api.trykitt.ai"
 CONCURRENCY = int(os.environ.get("KITT_CONCURRENCY", "15"))
 CALL_TIMEOUT_S = 180
@@ -43,6 +47,7 @@ STAGE_TIMEOUT_S = int(os.environ.get("KITT_STAGE_TIMEOUT_S", "600"))
 VALIDITIES = ("valid", "valid-risky", "unknown", "invalid")
 SHIPPABLE = ("valid", "valid-risky")  # demo policy; valid-risky = catch-all domain
 UNVERIFIED = "unverified"  # Kitt gave no verdict — in no sanitize policy, so it drops
+SHARED = "shared"  # the same address on two contacts, owner unclear — drops the same way
 
 
 def clean_domain(raw):
@@ -219,6 +224,18 @@ def main():
     verdicts = verify([row[args.email_col].strip().lower() for row in rows if row["_key"] in gated],
                       deadline, log)
 
+    for row in rows:
+        if row["_key"] in gated:
+            row[args.status_col] = verdicts.get(row[args.email_col].strip().lower(), UNVERIFIED)
+
+    # 3. One address on two contacts (Kitt answered the same mailbox for two "Scott"s at one
+    # company): it stays only with the one person its local part names, otherwise both lose it.
+    ships = [row for row in rows if (row.get(args.email_col) or "").strip()
+             and (row[args.status_col] or "").lower() in SHIPPABLE]
+    for i, reason in wrong_person_emails(ships, args.email_col, (args.name_col,), exempt_roles=False)["blank"].items():
+        ships[i][args.status_col] = SHARED
+        log(f"shared address: {reason}")
+
     counts = {"shipped": 0, "no_email": 0}
     rejected = []
     for row in rows:
@@ -227,8 +244,6 @@ def main():
             row[args.status_col] = row[args.status_col] or ""
             counts["no_email"] += 1
             continue
-        if row["_key"] in gated:
-            row[args.status_col] = verdicts.get(email.lower(), UNVERIFIED)
         verdict = (row[args.status_col] or UNVERIFIED).lower()
         counts[verdict] = counts.get(verdict, 0) + 1
         if verdict in SHIPPABLE:

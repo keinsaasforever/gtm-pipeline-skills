@@ -156,7 +156,7 @@ company's industry, headcount and HQ for contact-filter.
 
 ```bash
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-  export $(grep -E '^FULLENRICH_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+  while IFS= read -r line; do export "$line"; done < <(grep -E '^FULLENRICH_API_KEY=' "$GTM_ENV_PATH") && \
   python3 ~/.claude/skills/gtm-pipeline/_shared/fe_search.py people \
     --client-dir {client-slug}-gtm --filters {client-slug}-gtm/context/fe_people_filters.json \
     --per-company 2 --dry-run   # ceiling = companies × per-company × 0.25
@@ -278,7 +278,7 @@ https://docs.fullenrich.com/api/v2/people/search/post
 {
   "filters": {
     "company": {
-      "include": ["virginactive.co.za"]
+      "include": ["acme.co.za"]
     },
     "lead_location": {
       "include": ["South Africa"]
@@ -368,7 +368,7 @@ tokens", `422` "out of free lead finder requests").
 
 ### Fields Returned
 BC returns fewer fields than FE — no `seniority`, `companyHeadcount`, `companyIndustry`, or `roleStartDate`. Derive `linkedinProfileSlug` from the LinkedIn URL (`/in/<slug>`). Split `contact_full_name` into first/last manually.
-`company_name` is not the company's name: every one is sentence-cased ("Cover genius") and some are built from the domain ("Wealthcom" for wealth.com; 141 of 141 rows, 2026-10-01). Take names from the homepage with `_shared/company_name.py` before any step that searches by name.
+`company_name` is not the company's name: every one is sentence-cased ("Harbor labs") and some are built from the domain ("Fundwisecom" for fundwise.com; 141 of 141 rows, 2026-10-01). Take names from the homepage with `_shared/company_name.py` before any step that searches by name.
 
 ### Filter Compatibility
 When filtering contacts by job title keyword, BC uses `contact_job_title` (not FE's nested `employment.current.title`). Ensure your filter function checks both:

@@ -46,9 +46,10 @@ VERDICTS = {                       # what the stub Kitt says about each address
 
 def fake_post(url, json=None, headers=None, timeout=None):
     if url.endswith("/job/find_email"):
-        hit = json["domain"] == "found.de"
-        return FakeResponse({"email": "neu@found.de" if hit else "no-results-found",
-                             "validity": "valid"})
+        # twin.de/pair.de: Kitt answers ONE mailbox for two people at the same company
+        email = {"found.de": "neu@found.de", "twin.de": "scott@twin.de",
+                 "pair.de": "scott.clay@pair.de"}.get(json["domain"], "no-results-found")
+        return FakeResponse({"email": email, "validity": "valid"})
     address = json["email"]
     if address == "silent@nocheck.de":
         raise kitt.requests.RequestException("timeout")   # fails open → unverified
@@ -65,6 +66,12 @@ rows_in = [
     {"full_name": "Nina Neu", "company_domain": "found.de", "email": "", "email_source": ""},
     {"full_name": "Miss Miss", "company_domain": "leer.de", "email": "", "email_source": ""},
     {"full_name": "No Domain", "company_domain": "", "email": "", "email_source": ""},
+    # two Scotts, one address: the local part names neither alone → both lose it ...
+    {"full_name": "Scott Adler", "company_domain": "twin.de", "email": "", "email_source": ""},
+    {"full_name": "Scott Berg", "company_domain": "twin.de", "email": "", "email_source": ""},
+    # ... unless it names exactly one of them
+    {"full_name": "Scott Clay", "company_domain": "pair.de", "email": "", "email_source": ""},
+    {"full_name": "Scott Dorn", "company_domain": "pair.de", "email": "", "email_source": ""},
     # another provider's finds → the gate checks each one
     {"full_name": "Lena Klar", "company_domain": "fresh.de", "email": "lena@fresh.de",
      "email_source": "fullenrich"},
@@ -95,6 +102,9 @@ for name, verdict in (("Eva Weg", "invalid"),
     assert rows[name]["email"] == "", (name, rows[name])      # address pulled
     assert rows[name]["email_status"] == verdict, rows[name]
     assert rows[name]["full_name"] and rows[name]["company_domain"]  # contact itself stays
+for name in ("Scott Adler", "Scott Berg", "Scott Dorn"):
+    assert rows[name]["email"] == "" and rows[name]["email_status"] == kitt.SHARED, rows[name]
+assert rows["Scott Clay"]["email"] == "scott.clay@pair.de" and rows["Scott Clay"]["email_status"] == "valid"
 
 # The documented second pass: `--no-find` gates the fallback's finds and leaves Kitt's alone.
 sys.argv = ["kitt.py", "--no-find", "--input", str(out), "--output", str(tmp / "gated.csv")]

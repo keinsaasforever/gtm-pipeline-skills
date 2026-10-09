@@ -45,8 +45,8 @@ renderer, deck QA), and `references/README.md` holds the data contract they shar
   buys "a few more rows to rank from".
 - **Cost gate:** before the first paid provider call, state the expected spend (finders bill per person returned — BetterContact 0.10, FullEnrich 0.25 — so ~15 people is 1.50 to 3.75 cr; email: Kitt at USD 0.005 per address found and its checks at ~USD 0.0015 each are rounding errors, the fallback provider is the cost — budget ~10-15 email enrichment credits for the contacts Kitt misses; signals <USD 0.50 if enabled; a screening pass multiplies the search by 1 ÷ pass rate, since discarded contacts are billed too). Interactive: confirm with the user first. Headless: log the estimate in `run_log.md` and proceed, never block.
 - **Pull enough, not best.** Buy `target ÷ expected pass rate` rows (≈1.5× with resolved filters),
-  then stop. Ranking a large pool down to a small list means paying for every discarded row: the
-  Reduzer run bought 311 rows to deliver 30. If the first pull is off-segment, fix the *filters*
+  then stop. Ranking a large pool down to a small list means paying for every discarded row: a
+  construction-software run (2026-09-17) bought 311 rows to deliver 30. If the first pull is off-segment, fix the *filters*
   and re-pull small; never widen the pull to compensate.
 
 ---
@@ -77,10 +77,10 @@ they even sell / why do they want this audience" gap):
    client's own customers back to them is worse than a short one. Sources, all free: customer and
    reference pages, case studies, logos and quotes, and a partner/dealer/installer finder (often a
    public JSON feed behind the map). Save the list to `csv/input/client_existing.csv` and exclude by
-   **domain**, never by name: a name match flagged Weber u. Sohn, Schatten and Bühring for Weber HS,
-   Schatte and Bühr (perma-trade, 2026-09-18). A parent or sister company of a customer counts as
-   the customer.
-4. **Companies the prompt names as examples of its customers** ("Kunden wie Goldbeck, Züblin") are
+   **domain**, never by name: a name match flagged three unrelated firms whose names merely began like
+   three customers' ("Firma Schmidt u. Sohn" for "Firma Schmidt HS", a construction-supplier run,
+   2026-09-18). A parent or sister company of a customer counts as the customer.
+4. **Companies the prompt names as examples of its customers** ("Kunden wie Firma A, Firma B") are
    treated as existing customers: exclude them and their group, show lookalikes, and record the
    assumption. They are the best description of the segment, not leads.
 
@@ -109,13 +109,15 @@ case studies and quotes are the best source; a customer quote names the buyer's 
 the offering:
 
 1. **Segments** — **when the prompt names its customer groups, those are the segments**, 10
-   contacts each, up to 3 within the 30 cap (perma-trade named SHK firms, general contractors and FM
-   firms: three segments). Only when the prompt names none: which buyer types the client sells to,
-   in *their* words (reduzer.com: contractor, architect, developer, consultant), ranked by how
+   contacts each, up to 3 within the 30 cap (a construction-supplier prompt named SHK firms, general
+   contractors and FM firms: three segments). Only when the prompt names none: which buyer types the
+   client sells to, in *their* words (a construction-software site: contractor, architect, developer,
+   consultant), ranked by how
    prominently the site sells to each, **top 2** (Demo Restrictions). Record why the others were dropped.
 2. **Tier 1 titles per segment** — the role that owns the problem day to day and would answer the
-   message. Reference-check it: Reduzer's own quotes are from an "Environmental manager" at a
-   contractor and a "Sustainability Manager" at a developer, which *is* the tier-1 list.
+   message. Reference-check it: on a construction-software run the client's own quotes came from an
+   "Environmental manager" at a contractor and a "Sustainability Manager" at a developer, which *is*
+   the tier-1 list.
 3. **Tier 2 titles** — the adjacent roles that own it when tier 1 does not exist (tender/estimating,
    design/BIM, technical, project development), plus leadership at small companies.
 4. **Write them in the market's language, in the forms a title index actually stores.** Nordic and
@@ -128,8 +130,8 @@ the offering:
 
 Write all of it to `context/icp.md` under `## Personas` (segments, tier 1, tier 2, excludes, and one
 line of evidence per tier-1 list). **No paid call before this block exists** — it is what makes the
-Step 3 filters narrow, and it is the difference between the emmy run (one query per company, 16
-candidates for 12 leads) and a market-wide pull.
+Step 3 filters narrow, and it is the difference between a run over a named-brand list (one query per
+company, 16 candidates for 12 leads) and a market-wide pull.
 
 ---
 
@@ -176,7 +178,7 @@ Write the resolved values into `context/icp.md` next to the personas.
 **Map with judgement, then probe.** A segment's words rarely exist verbatim in a list. For each segment,
 pick every value that describes it from **each** finder's list, using what you know about the industry:
 synonyms, parent and child categories, the adjacent values its companies are actually filed under
-(Sphere, 2026-09-24: "Maschinenbau" has no BetterContact value, but FullEnrich has `Machinery
+(a machinery run, 2026-09-24: "Maschinenbau" has no BetterContact value, but FullEnrich has `Machinery
 Manufacturing`, `Industrial Machinery Manufacturing` and `Automation Machinery Manufacturing`). Probe
 each value **alone** at `limit 1` (a BetterContact probe that returns 0 is free) and keep only values
 that return on-segment rows; a value that returns 0 alone is broken, not selective. Only when no finder
@@ -199,7 +201,7 @@ and segment locally — every provider filter is advisory.
 
 ### 3c — Broad research route (when 3a says the filters don't fit, or the segment is list-shaped)
 
-This is the emmy/nextbike route, and it is cheap because the company list is free. **Take it directly,
+This is the route two earlier demos took, and it is cheap because the company list is free. **Take it directly,
 without 3a probes, when the prompt names a list-shaped population**: an institution type (hospitals,
 clinics, universities, schools, municipalities, public utilities), the members of an association, the
 exhibitors of a fair, a ranking or a register. A finder's industry value is broader
@@ -213,9 +215,9 @@ buys the wrong rows. For any other segment, 3a's two probes decide.
    the pool at ~2× the target companies. Verify each domain.
 2. Then one people search over the pool (`limit` 5–8 per company, tier-1 titles), and pick one
    contact per company. BetterContact takes the whole pool in one call: `company: {include: [domains]}`
-   + `lead_location` + titles + `limit_per_company: 3` (Sphere: 44 domains → 115 people at 36
-   companies, billed 0.0). A group brand needs its own domain (`bosch-pt.com`, `stihl.de`).
-   Precedent: emmy 18 named brands → 16 candidates → 12 delivered; nextbike 21 clinics from a public
+   + `lead_location` + titles + `limit_per_company: 3` (a machinery run: 44 domains → 115 people at 36
+   companies, billed 0.0). A group brand needs its own domain (`brand-tools.com`, not the group's
+   `group.com`). Precedent: 18 named brands → 16 candidates → 12 delivered; 21 clinics from a public
    hospital list → 47 candidates → 18 delivered.
 
 **Route before searching** (`conventions.md` → Search Routing). Write the requirement split to
@@ -260,7 +262,7 @@ For demos: use a relaxed hard-reject threshold (allow tiers 1–5 to pass), prio
 
 **Then take each company's name from its own homepage:** `python3 ~/.claude/skills/gtm-pipeline/_shared/company_name.py
 csv/intermediate/contacts_filtered.csv`. A finder's name field is not the company's name (BetterContact returns
-"Wealthcom" for wealth.com and "Cover genius"), and every later step, the signal search above all, searches by it.
+"Fundwisecom" for fundwise.com and "Harbor labs"), and every later step, the signal search above all, searches by it.
 Fix the rows it lists under "check by hand".
 
 ---
@@ -285,12 +287,18 @@ Run **people-enrichment** on the filtered contacts. **Demo mode: email only, no 
    accepts anything), so check it against the company's documented format (search
    "`<domain>` email format"): when Kitt's guess contradicts a format that covers ≥ 90 % of the
    company's addresses, use that format for the person and re-check it with `kitt.py --no-find`.
-   Sphere, 2026-09-24: Kitt gave `lastf@` and then `firstlast@` for the same person at
-   rohde-schwarz.com, where 98 % of addresses are `first.last@`.
+   A machinery run, 2026-09-24: Kitt gave `lastf@` and then `firstlast@` for the same person at a
+   large electronics maker, where 98 % of addresses are `first.last@`.
+4. **One address, one person.** Kitt can hand the same address to two people (one mailbox for two
+   "Scott"s at one company, 2026-10-09), so `kitt.py` dedupes across contacts on every pass: a shared
+   address stays only with the person its local part names (`scott.clay@` → Scott Clay); otherwise
+   every contact loses it (`email_status` `shared`) and takes the rejected-address way below. A
+   source that pairs the name and the address (the company's team page, imprint, a press release)
+   ties it too: put it back by hand for that person and note the URL in `run_log.md`.
 
 ```bash
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-export $(grep -E '^KITT_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+while IFS= read -r line; do export "$line"; done < <(grep -E '^KITT_API_KEY=' "$GTM_ENV_PATH") && \
 python3 ~/.claude/skills/gtm-pipeline/_shared/kitt.py \
   --input csv/intermediate/contacts_filtered.csv --output csv/intermediate/contacts_kitt.csv
 # … then PB or FE on the rows kitt.py left without an email, then the gate: …
@@ -300,8 +308,12 @@ python3 ~/.claude/skills/gtm-pipeline/_shared/kitt.py --no-find \
 
 **A rejected address never removes the contact.** Two ways out, in order:
 1. **A spare at the same company** — another contact the search already found, whose address came
-   back `valid` or `valid-risky`, takes the slot. Free: that pool is already paid for. Do **not** search for a
-   replacement and do **not** walk to the next provider (Paul, 2026-09-23).
+   back `valid` or `valid-risky`, takes the slot. The address is free: that pool is already paid for. Do **not** search for a
+   replacement and do **not** walk to the next provider (Paul, 2026-09-23). **The spare passes the
+   current-role check first**, the one the deck's method note claims for every card: still at that
+   company in an on-persona role, read from a fresh source (FullEnrich `employment.current`, 0.25 cr,
+   or the company's own team page, free), never from the finder row, which lags. A spare that fails
+   it, or can't be checked, is no spare.
 2. **No spare** — the contact keeps its card with the LinkedIn draft only and the `est-warn`
    "on request" badge (Step 7b). The company stays in the deck; only the address goes.
 
@@ -369,7 +381,7 @@ with open('csv/output/contacts_enriched.csv') as f, open('csv/input/companies_ra
 
 # Run signal-search on the unique companies
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-export $(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY|TINYFISH_API_KEY|FIRECRAWL_API_KEY|TAVILY_API_KEY|GEMINI_API_KEY)=' "$GTM_ENV_PATH" | xargs) && \
+while IFS= read -r line; do export "$line"; done < <(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY|TINYFISH_API_KEY|FIRECRAWL_API_KEY|TAVILY_API_KEY|GEMINI_API_KEY)=' "$GTM_ENV_PATH") && \
   python3 ~/.claude/skills/gtm-signal-search/signal_search.py \
     --client-dir {client-slug}-gtm
 ```
@@ -469,8 +481,8 @@ does all three.
 
 **Which signals hook a message.** Only strong ones: an acquisition, funding, a new site or
 development centre, a capacity expansion, a new programme. A **product launch counts only when it
-creates the very need the offering serves** (Sphere: STIHL's new battery platform for a
-battery-validation AI; a new aircraft seat entering certification for requirements automation), never
+creates the very need the offering serves** (a machinery run: a power-tool maker's new battery
+platform for a battery-validation AI; a new aircraft seat entering certification for requirements automation), never
 because a recent news hook is wanted (a routine new tool generation stays ICP-fit). Record the
 reason next to the score.
 
@@ -478,7 +490,7 @@ reason next to the score.
 (2) A **timeless fit fact**: what the company does, where, for whom and at what size, from its own
 site, plus the person's role. A dated event (a project, contract, acquisition, report, sale, post)
 that is not a kept signal never goes into a hook, a "why they fit" text or any other field, however
-it reached you. Cost of skipping it (perma-trade, 2026-09-18): the scorers wrote stale news into
+it reached you. Cost of skipping it (a construction-supplier run, 2026-09-18): the scorers wrote stale news into
 free-text fit fields, the signal gate never saw it, and drafts at five companies plus one fit text
 used events that had failed the gate (May to early July, and a post with no live link), which a
 deck-side fix then had to strip out.
@@ -537,7 +549,7 @@ result to `csv/output/`.
    `deck_template.html` from `context/deck.json`; do not hand-copy a prior client's deck or restyle
    from scratch. Drive it from the sanitized CSV +
    `context/` files. Assemble with the **sonnet** model. Deck anatomy (all baked into the template):
-   - **Header + hero + 4 stat tiles**, then segment blocks. Group contacts into **Signal-first**
+   - **Header + hero + 4 stat tiles** (3 when no card has a signal), then segment blocks. Group contacts into **Signal-first**
      (fresh, sourced buying signal ≤ 60d → `sig-hot` red signal box with a live `.sigsrc` source
      link + date) and **ICP-first** (strong fit, no live signal → `sig-fit` blue "why they fit"
      box, no source link, built only from timeless fit facts: Step 6 → Hook sources). Use
@@ -563,6 +575,11 @@ result to `csv/output/`.
    - **Hero = hook, not manual.** `{{HERO_HEADLINE}}` short (≤ ~7 words), outcome-first, no jargon;
      `{{HERO_INTRO}}` 1–2 short sentences on what they *get* (ready-to-send outreach to the right
      people), never how the pipeline works. Intrigue, don't overwhelm with technical detail.
+   - **Zero signals never show** (Paul, 2026-10-09). No "0 with a fresh buying signal" tile, and no
+     hero, method-note, footer or segment line that states a zero or "no signal" count. A count of 1
+     or more shows as usual. `render_deck.py` drops the tile, the zero count in a segment's meta line
+     and any such sentence in the hero, method note and footer; write `approach_icp` as what the
+     cards open with, not as the absence of a signal.
    - **Never name a third-party tool or data provider** anywhere in the rendered deck (no enrichment
      vendor, search/scrape provider, or phone/email finder). A signal's source link cites the
      *original publication* (press release, careers page, news outlet), not the tool that found it.
@@ -586,13 +603,14 @@ LinkedIn link is the only exception). **Read the sanitize report before shipping
 `emails_name_mismatch` is a wrong-person suspect the code would not drop on its own — confirm or
 pull it by hand, and check that nothing in `emails_wrong_person` still appears in the deck. **No
 address may appear on two cards** (two contacts sharing a mailbox means one of them gets a stranger's
-mail, BOC24 and Black Diamond in the Neocom demo). **German decks use Du-form** — flag any `Sie/Ihr/Ihnen`
+mail; it happened at two companies in one demo, 2026-09-23). **German decks use Du-form** — flag any `Sie/Ihr/Ihnen`
 formal-address forms in the deck's own copy (the drafts follow the message prompt's register).
 **ICP-fit cards carry no dates:** the fit box and both drafts of every card without a kept signal
 contain no full date (`2026-07-07`, `07.07.2026`, `7. Juli 2026`, `July 7, 2026`) and no month
 followed by a year; a hit means a stale event slipped in, so rewrite that sentence from timeless
 fit facts. **Hero is tight** — `{{HERO_HEADLINE}}` ≤ ~7 words and `{{HERO_INTRO}}` ≤ 2
-sentences with no pipeline/sourcing detail. Also assert the deck's plumbing survived templating: the
+sentences with no pipeline/sourcing detail. **No zero signal count** ("0 … signal") in the visible text.
+Also assert the deck's plumbing survived templating: the
 **Download-CSV button** (`id="dl"`) with a non-empty `CSV` string, the **footer CTA** (`.cta-btn`),
 and the Expand-all toggle (`id="toggle"`) are all present, and the embedded CSV row count == card
 count.
@@ -608,6 +626,9 @@ generated_message, char_count, has_posts
 
 Messages saved separately to `csv/output/messages.csv`. **Delivery is gated** — write the cover
 email to a file; never send on the user's behalf without explicit go-ahead (`conventions.md` #12).
+**The cover email never states a zero signal count** or that no signal was found (Paul, 2026-10-09):
+with no signal card it talks about the fit and the drafts. `run_log.md` and `result.json` may still
+give the count; they are internal.
 
 ---
 

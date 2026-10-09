@@ -21,7 +21,10 @@ for c in contacts():
     for k in ("li_p1", "email_p1"):
         if m.get(k):
             first = m[k].split("\n", 1)[0]
-            if not first.endswith(",") or not any(n and n in first for n in names): errs.append(f"{who}: {k} greeting '{first}'")
+            # a short form of the first name counts too ("Hi Josh," for Joshua), 3+ letters
+            short, fn = (re.findall(r"\w+", first.lower()) or [""])[-1], c["first_name"].strip().lower()
+            nick = len(min(short, fn, key=len)) >= 3 and (fn.startswith(short) or short.startswith(fn))
+            if not first.endswith(",") or not (nick or any(n and n in first for n in names)): errs.append(f"{who}: {k} greeting '{first}'")
     if re.search("[–—]", text): errs.append(f"{who}: dash")
     if "!" in text: errs.append(f"{who}: exclamation")
     if BANNED.search(text): errs.append(f"{who}: banned word {BANNED.search(text).group()}")

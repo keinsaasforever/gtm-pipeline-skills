@@ -1,24 +1,24 @@
-"""Wrong-person + keep-the-contact checks (Neocom demo, 2026-09-23). python3 test_sanitize.py"""
+"""Wrong-person + keep-the-contact checks (a demo, 2026-09-23). python3 test_sanitize.py"""
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sanitize import _signal_is_valid, email_owner_score, sanitize_rows, wrong_person_emails
 
-assert email_owner_score("Karl Horst", "khorst@bau-ko.de") == 2
-assert email_owner_score("Bernd Baum", "khorst@bau-ko.de") == 0
-assert email_owner_score("Sven Weißer", "sweisser@jagd-shop.de") == 2      # ß folds to ss
+assert email_owner_score("Karl Horst", "khorst@acme-bau.de") == 2
+assert email_owner_score("Bernd Baum", "khorst@acme-bau.de") == 0
+assert email_owner_score("Max Weißer", "mweisser@example.de") == 2         # ß folds to ss
 assert email_owner_score("Dušan Kovač", "dusan@example.com") == 2          # š strips to s
 assert email_owner_score("Đặng Thu", "dang@example.vn") == 2              # đ, ặ (Vietnamese)
 assert email_owner_score("Jürgen Kahl", "juergen@example.de") == 2        # ü still → ue
-assert email_owner_score("Christoph Brenner", "christoph.brenner@bergsport.eu") == 2
+assert email_owner_score("Lena Brenner", "lena.brenner@example.eu") == 3      # both name parts
 assert email_owner_score("Jane Doe", "jd@acme.de") == 1                        # initials
 assert email_owner_score("Jane Doe", "info@acme.de") is None                   # role mailbox
 assert email_owner_score("", "jane@acme.de") is None
 
 rows = [
-    {"full_name": "Karl Horst", "email": "khorst@bau-ko.de", "email_status": "valid"},
-    {"full_name": "Bernd Baum", "email": "khorst@bau-ko.de", "email_status": "valid"},
+    {"full_name": "Karl Horst", "email": "khorst@acme-bau.de", "email_status": "valid"},
+    {"full_name": "Bernd Baum", "email": "khorst@acme-bau.de", "email_status": "valid"},
     {"full_name": "Ida Unklar", "email": "office2@acme.de", "email_status": "valid"},
     {"full_name": "Udo Unklar", "email": "office2@acme.de", "email_status": "valid"},
     {"full_name": "Lea Lone", "email": "buchhaltung@acme.de", "email_status": "valid"},
@@ -29,6 +29,11 @@ assert set(found["blank"]) == {1, 2, 3}, found          # Horst keeps his own, t
 assert "Karl Horst" in found["blank"][1]
 assert "owner unclear" in found["blank"][2]
 assert found["mismatched"] == ["Lea Lone <buchhaltung@acme.de>"]  # reported only, never dropped
+
+# A shared role mailbox is exempt in sanitize, but the Kitt gate takes it off both contacts.
+rows = [{"full_name": "Ida Eins", "email": "info@acme.de"}, {"full_name": "Udo Zwei", "email": "info@acme.de"}]
+assert wrong_person_emails(rows, "email", ("full_name",))["blank"] == {}
+assert set(wrong_person_emails(rows, "email", ("full_name",), exempt_roles=False)["blank"]) == {0, 1}
 
 # require_email=False: the contact survives, the address does not — that is the est-warn card.
 rows = [

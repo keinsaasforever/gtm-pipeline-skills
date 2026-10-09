@@ -61,7 +61,7 @@ response to `csv/intermediate/fe_company_search_raw.json`.
 
 ```bash
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-  export $(grep -E '^FULLENRICH_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+  while IFS= read -r line; do export "$line"; done < <(grep -E '^FULLENRICH_API_KEY=' "$GTM_ENV_PATH") && \
   python3 ~/.claude/skills/gtm-pipeline/_shared/fe_search.py companies \
     --client-dir {client-slug}-gtm --filters {client-slug}-gtm/context/fe_company_filters.json \
     --max 40 --dry-run        # drop --dry-run once the printed request + ceiling look right
@@ -234,7 +234,7 @@ hospitals or clinics, universities, municipalities or public utilities, the memb
 the exhibitors of a trade fair, a ranking ("top 50 developers in Munich"), a public register. Also when
 the finders' value lists can't separate the segment ("private clinic" is not an industry, only
 `Hospitals and Health Care`). The list is free and already bounded, and it often carries the
-attribute that separates the segment. Precedent: nextbike's clinic segment came from a Wikipedia hospital
+attribute that separates the segment. Precedent: one demo's clinic segment came from a Wikipedia hospital
 list (21 clinics → 47 candidates → 18 delivered).
 
 1. **Name the list before searching.** Write to `context/icp.md` → `## Search routing`: the population,
@@ -257,18 +257,18 @@ list (21 clinics → 47 candidates → 18 delivered).
    drop existing customers and the blacklist, then cap (a demo: ~2× the target companies).
 5. **Domains.** The fetch returns the list's outbound links in `links[]` **without their anchor text**
    (the markdown has none inline), so match a link to a row by a distinctive name token in its host
-   (`geisenhoferklinik.de` ↔ "Frauenklinik Dr. Geisenhofer"; on the Munich hospital list this found 11
+   (`musterklinik.de` ↔ "Frauenklinik Dr. Muster"; on the Munich hospital list this found 11
    of the 18 private clinics). For the rest, one TinyFish search per company, `<name> <city>` with
    `location` = the country, and read its 10 hits for the company's own domain, skipping aggregators. In a
    25-company benchmark (2026-09-29) that got 23 domains right and 0 wrong; SerpAPI `google_light` got 11
-   right and 10 wrong. Spot-check generic names, and keep the group brand's own domain (`bosch-pt.com`,
-   not `bosch.com`).
+   right and 10 wrong. Spot-check generic names, and keep the group brand's own domain (`brand-tools.com`,
+   not the group's `group.com`).
 6. **People search keyed by name + location**, never by the exact domain alone (conventions #11): a list's
    `acme.de` may be indexed as `acme.com`.
 
 ```bash
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-export $(grep -E '^TINYFISH_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+while IFS= read -r line; do export "$line"; done < <(grep -E '^TINYFISH_API_KEY=' "$GTM_ENV_PATH") && \
 curl -s -G "https://api.search.tinyfish.ai/" -H "X-API-Key: $TINYFISH_API_KEY" \
   --data-urlencode "query=Liste der Krankenhäuser in München" --data-urlencode "location=DE" \
   > {client-slug}-gtm/csv/intermediate/directory_search.json && \

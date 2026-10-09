@@ -162,21 +162,22 @@ Every address another provider found is checked before it is kept. Four verdicts
 | no verdict (error, timeout, throttle, no key) | fail **open**: keep it unverified | keep it as `unverified`, which no sanitize policy ships |
 
 The verdict is written to `email_status`, which is what `sanitize.py` filters on: `standard` passes
-`VALID` and `VALID_RISKY` and drops `UNKNOWN` / `INVALID` / `UNVERIFIED`. Losing the address never
+`VALID` and `VALID_RISKY` and drops `UNKNOWN` / `INVALID` / `UNVERIFIED` / `SHARED`. Losing the address never
 deletes the contact — it ships with LinkedIn only and the deck's `est-warn` badge.
 
 ### Run
 
 ```bash
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-export $(grep -E '^KITT_API_KEY=' "$GTM_ENV_PATH" | xargs) && \
+while IFS= read -r line; do export "$line"; done < <(grep -E '^KITT_API_KEY=' "$GTM_ENV_PATH") && \
 python3 ~/.claude/skills/gtm-pipeline/_shared/kitt.py \
   --input  csv/intermediate/contacts_filtered.csv \
   --output csv/intermediate/contacts_kitt.csv
 ```
 
 Finds an address for every row that has none, then checks every address that came from another
-provider. `--no-find` checks only (use it for the gate pass after PB/FE/Pipe0); `--keep-rejected`
+provider. An address on two rows stays only with the person its local part names, otherwise both
+lose it (`email_status` `shared`): Kitt can return one mailbox for two people at one company. `--no-find` checks only (use it for the gate pass after PB/FE/Pipe0); `--keep-rejected`
 leaves a rejected address in the column for inspection (it still never ships — the verdict does
 that). Column names are flags: `--name-col` (falls back to `first_name` + `last_name`),
 `--domain-col`, `--email-col`, `--status-col`, `--source-col`. Every rejected row is printed with
@@ -216,7 +217,7 @@ The **first** email provider in the waterfall when it's available. Uses the Phan
 ### Run
 ```bash
 source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh" && \
-export $(grep -E '^(PHANTOMBUSTER_API_KEY|GOOGLE_CLIENT_SECRET_FILE|GOOGLE_AUTHORIZED_USER_FILE|PB_AGENT_EMAIL)=' "$GTM_ENV_PATH" | xargs) && \
+while IFS= read -r line; do export "$line"; done < <(grep -E '^(PHANTOMBUSTER_API_KEY|GOOGLE_CLIENT_SECRET_FILE|GOOGLE_AUTHORIZED_USER_FILE|PB_AGENT_EMAIL)=' "$GTM_ENV_PATH") && \
 python3 ~/.claude/skills/gtm-pipeline/_shared/pb_email_finder.py \
   --input  csv/intermediate/contacts_filtered.csv \
   --output csv/intermediate/contacts_pb_email.csv \
@@ -232,7 +233,7 @@ Then run the FullEnrich pass (Provider 1) on the rows that still have **no email
 - Only rows with **first + last + domain** and **no email yet** are sent to PB; the rest fall through untouched. (Before 2026-09-18 it staged rows that already had an email too, and PB bills per email found, so those were paid for twice and then discarded by the write-back.)
 - Batches of 50. Per batch: stage → launch → wait 180s → poll (10s, 600s cap) → fetch `resultObject` (console-log regex fallback).
 - **Domain-identity cross-check is applied automatically.** An email whose domain doesn't belong to the target company is **dropped** (left blank → falls through to FE), honouring the MANDATORY cross-check below. Use `--keep-mismatch` only if you deliberately want to keep them.
-- The verdict has four values: `match`, `subdomain`, **`other_tld`**, `mismatch`. `other_tld` = same brand label, different TLD, and it is dropped like a mismatch: on 2026-09-17 PB returned `morten.kjaerland@obos.fr` (French OBOS) for a contact at `obos.no` and the old TLD-agnostic check graded it `match`. A real parent domain (`stena.com` for a `stenafastigheter.se` contact) also lands here — confirm it by hand before keeping it.
+- The verdict has four values: `match`, `subdomain`, **`other_tld`**, `mismatch`. `other_tld` = same brand label, different TLD, and it is dropped like a mismatch: on 2026-09-17 PB returned `first.last@brand.fr` (the brand's French namesake, another company) for a contact at `brand.no` and the old TLD-agnostic check graded it `match`. A real parent domain (`group.com` for a `groupproperties.se` contact) also lands here — confirm it by hand before keeping it.
 - Sets `email_source = "phantombuster"`, `email_status = "UNGRADED"`, and the domain verdict in its own `email_domain_check` column. `~1 credit per email found`.
 - ⚠ **PB grades nothing** (312 measured rows: an address or an error, never a status). `sanitize.py`'s `standard` policy therefore **drops every PB address** from the lead-facing output by design. If PB is your only source for a contact, either verify the address first or ship it labelled unverified (deck badge `est-warn`, LinkedIn draft only) — do not pass `email_policy="any"` to slip ungraded addresses into a client CSV unlabelled.
 

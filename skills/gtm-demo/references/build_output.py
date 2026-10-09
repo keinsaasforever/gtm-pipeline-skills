@@ -26,7 +26,7 @@ for c in contacts():
         "signal_text": (sig or {}).get("summary", ""), "signal_date": shown_date(sig or {}),
         "signal_source_url": (sig or {}).get("source_url", ""),
         "signal_source_label": (sig or {}).get("source_url", "").split("/")[2].removeprefix("www.") if sig else "",
-        "cta_variant": m["cta_variant"], "lang": m["lang"].upper(), "email_subject": m["email_subject"] if kept else "",
+        "contact_label": m.get("contact_label", ""), "cta_variant": m["cta_variant"], "lang": m["lang"].upper(), "email_subject": m["email_subject"] if kept else "",
         **{k: (m[k] if kept else "") for k in ("email_p1", "email_p2", "email_p3")}, "li_p1": m["li_p1"], "li_p2": m["li_p2"]})
 # email_limit covers greeting + sign-off; the body itself is held to 450 by check_messages.py
 clean, report = sanitize_rows(rows, email_policy="standard", require_email=False, max_signal_age_days=60, email_limit=520)

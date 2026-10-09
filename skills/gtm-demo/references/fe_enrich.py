@@ -1,6 +1,6 @@
 """FE v2 work-email enrichment for Kitt's misses: python3 fe_enrich.py <in.csv> <out.csv>, run from {client-slug}-gtm/.
 Only rows with no email AND no email_status (Kitt found nothing) are sent; an optional `email_domain` column
-overrides the mail domain (bosch.com for bosch-pt.com, lht.dlh.de for lufthansa-technik.com).
+overrides the mail domain (group.com for brand-tools.com, mail.group.de for group-technik.com).
 Keeps all columns; adds email, email_status, email_source, email_domain_check. Drops wrong-company domains."""
 import csv, json, os, subprocess, sys, time
 sys.path.insert(0, os.path.expanduser("~/.claude/skills/gtm-pipeline/_shared"))

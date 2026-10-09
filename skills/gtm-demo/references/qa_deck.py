@@ -18,6 +18,8 @@ check(len(cards) == len(data), f"cards {len(cards)} != deck_data rows {len(data)
 check(not re.findall(r"\{\{[A-Z0-9_]+\}\}", page), "unfilled {{TOKEN}} placeholders")
 visible = html.unescape(re.sub(r"<script.*?</script>|<style.*?</style>|<[^>]+>", " ", page, flags=re.S))
 check(not re.search("[–—]", visible), "en/em dash in visible text")
+zero = re.search(r"\b(?:0|zero|null)\b[^.!?\d]{0,40}signal", visible, re.I)
+check(not zero, f"zero signal count shown: {zero and zero.group()!r}")
 vendor = re.search(r"\b(kitt|trykitt|fullenrich|bettercontact|phantombuster|pipe0|parallel\.ai|firecrawl|apollo|crustdata|amplemarket|clay)\b", visible, re.I)
 check(not vendor, f"provider name visible: {vendor and vendor.group()}")
 by_dom = {d["company_domain"]: d for d in data}

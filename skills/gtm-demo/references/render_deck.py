@@ -10,15 +10,15 @@ LABELS = {
     "de": dict(signal="Kaufsignal", fit="Warum es passt", contact="Entscheider", subject="Betreff", draft="Nachrichtenentwurf",
                verified="verifiziert", likely="wahrscheinlich gültig", on_request="E-Mail auf Anfrage",
                cta_a="CTA A · Frage", cta_b="CTA B · Angebot", sig_first="Signal zuerst", icp="ICP-Fit", segment="Segment",
-               meta="{n} Unternehmen · {s} mit aktuellem Kaufsignal · {m} mit E-Mail", tag_sig="Signal",
-               stat1="Entscheider", stat2="mit aktuellem Kaufsignal", stat3="geprüfte E-Mail-Adressen",
+               meta=("{n} Unternehmen", "{s} mit aktuellem Kaufsignal", "{m} mit E-Mail"), tag_sig="Signal",
+               stat1="Entscheider", stat1_named="Ansprechpartner", stat2="mit aktuellem Kaufsignal", stat3="geprüfte E-Mail-Adressen",
                download="CSV herunterladen", expand="Alle aufklappen", collapse="Alle zuklappen",
                months=["Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sept.", "Okt.", "Nov.", "Dez."]),
     "en": dict(signal="Buying signal", fit="Why they fit", contact="Decision-maker", subject="Subject", draft="Draft message",
                verified="verified", likely="likely valid", on_request="Email on request",
                cta_a="CTA A · Question", cta_b="CTA B · Offer", sig_first="Signal first", icp="ICP fit", segment="Segment",
-               meta="{n} companies · {s} with a fresh buying signal · {m} with email", tag_sig="Signal",
-               stat1="decision-makers", stat2="with a fresh buying signal", stat3="checked email addresses",
+               meta=("{n} companies", "{s} with a fresh buying signal", "{m} with email"), tag_sig="Signal",
+               stat1="decision-makers", stat1_named="named contacts", stat2="with a fresh buying signal", stat3="checked email addresses",
                download="Download CSV", expand="Expand all", collapse="Collapse all",
                months=["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]),
 }
@@ -49,7 +49,7 @@ def card(r):
         mail = f'<span class="cmail">{e(r["email"])}</span> <span class="est {cls}">{label}</span>'
     else:
         mail = f'<span class="est est-warn">{L["on_request"]}</span>'
-    contact = (f'<div class="contact"><div class="clabel">{L["contact"]}</div><div class="cname"><strong>{e(r["full_name"])}</strong>'
+    contact = (f'<div class="contact"><div class="clabel">{e(r.get("contact_label") or L["contact"])}</div><div class="cname"><strong>{e(r["full_name"])}</strong>'
                f'<span class="ctitle"> · {e(r["job_title"])}</span></div><div class="clinks"><a href="{e(r["linkedin_url"])}" target="_blank" rel="noopener">LinkedIn</a> · {mail}</div></div>')
     email_block = ""
     if r["email"]:
@@ -70,7 +70,8 @@ for n, seg in enumerate([s for s in cfg["segments"] if any(r["segment"] == s["ke
     rows = [r for r in data if r["segment"] == seg["key"]]
     sig = sorted([r for r in rows if r["group"] == "signal"], key=lambda r: r["signal_date"], reverse=True)
     icp = [r for r in rows if r["group"] != "signal"]
-    meta = L["meta"].format(n=len(rows), s=len(sig), m=sum(bool(r["email"]) for r in rows))
+    meta = " · ".join(t.format(n=len(rows), s=len(sig), m=sum(bool(r["email"]) for r in rows))
+                      for t in L["meta"] if sig or "{s}" not in t)  # a zero signal count never shows
     body = [f'<section class="seg"><div class="seg-head"><div class="seg-kicker">{L["segment"]} {n}</div><h2>{e(seg["title"])}</h2><p>{e(seg["intro"])}</p><div class="seg-meta">{meta}</div></div>']
     if sig:
         body.append(f'<div class="approach sig"><h3>{L["sig_first"]}</h3><p>{e(cfg["approach_signal"])}</p></div>')
@@ -84,10 +85,16 @@ for n, seg in enumerate([s for s in cfg["segments"] if any(r["segment"] == s["ke
 start = TPL.index("  <!-- ============================================================\n       SEGMENT")
 end = TPL.index('  <p class="note">')
 page = TPL[:start] + "\n".join(sections) + "\n\n" + TPL[end:]
+n_sig = sum(r["group"] == "signal" for r in data)
+if not n_sig:  # zero signals never show (Paul, 2026-10-09): no signal tile, no "0 … signal" sentence in the copy
+    page = re.sub(r"\n[^\n]*\{\{STAT2_N\}\}[^\n]*", "", page)
+    zero = re.compile(r"[^.!?]*\b(?:0|zero|null|no|none|kein\w*)\b[^.!?]*signal[^.!?]*[.!?]?\s*", re.I)
+    for k in ("hero_headline", "hero_intro", "method_note", "footer_headline", "footer_body", "footer_meta"):
+        cfg[k] = zero.sub("", cfg[k]).strip()
 tokens = {
     "LANG": cfg["lang"], "CLIENT_NAME": cfg["client_name"], "HERO_HEADLINE": cfg["hero_headline"], "HERO_INTRO": cfg["hero_intro"],
-    "STAT1_N": str(len(data)), "STAT1_LABEL": L["stat1"],
-    "STAT2_N": str(sum(r["group"] == "signal" for r in data)), "STAT2_LABEL": L["stat2"],
+    "STAT1_N": str(len(data)), "STAT1_LABEL": L["stat1_named"] if any(r.get("contact_label") for r in data) else L["stat1"],
+    "STAT2_N": str(n_sig), "STAT2_LABEL": L["stat2"],
     "STAT3_N": str(sum(bool(r["email"]) for r in data)), "STAT3_LABEL": L["stat3"],
     "STAT4_N": cfg["stat4"]["n"], "STAT4_LABEL": cfg["stat4"]["label"],
     "LBL_DOWNLOAD": L["download"], "LBL_EXPAND": L["expand"], "LBL_COLLAPSE": L["collapse"],

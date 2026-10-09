@@ -12,7 +12,7 @@
 #
 # Usage (source it, then inject the keys you need):
 #   source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh"
-#   export $(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY)=' "$GTM_ENV_PATH" | xargs) && python3 script.py
+#   while IFS= read -r line; do export "$line"; done < <(grep -E '^(PARALLEL_API_KEY|OPENROUTER_API_KEY)=' "$GTM_ENV_PATH") && python3 script.py
 
 _gtm_local="$HOME/.claude/skills/gtm-pipeline/_shared/local.md"
 if [ -z "${GTM_ENV_PATH:-}" ] && [ -f "$_gtm_local" ]; then

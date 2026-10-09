@@ -1,4 +1,4 @@
-"""Freshness + source checks, from the cases of the perma-trade run (2026-09-18). python3 test_freshness.py"""
+"""Freshness + source checks, from the cases of a construction-supplier run (2026-09-18). python3 test_freshness.py"""
 import os
 import sys
 from datetime import datetime, timedelta
@@ -18,32 +18,32 @@ assert dates_in("Sept. 3, 2026") == [datetime(2026, 9, 3)] and dates_in("3. Mär
 assert dates_in("bis 2040, seit 1996, Juli 2028") == []  # a year or a month alone is not a date
 assert dates_in("09/24/2026") == [datetime(2026, 9, 24)]                      # US form: 24 can't be a month
 assert dates_in("01/09/2025") == [datetime(2025, 9, 1)]                       # ambiguous, both past: the later reading
-assert dates_in("09/02/2026") == [datetime(2026, 9, 2)]                       # TRUMPF en_US: 2 Sept, not 9 Feb
-assert dates_in("07.09.2026Diehl Aviation") == [datetime(2026, 9, 7)]         # no space after the year
+assert dates_in("09/02/2026") == [datetime(2026, 9, 2)]                       # a machine maker's en_US page: 2 Sept, not 9 Feb
+assert dates_in("07.09.2026Acme Aviation") == [datetime(2026, 9, 7)]         # no space after the year
 
-# The source's own date beats the provider's stamp (Sphere run, 2026-09-24).
-old_story = {"url": "hensoldt", "title": "HENSOLDT appoints Sven Heursch as Head of Digitalisation | HENSOLDT",
+# The source's own date beats the provider's stamp (a machinery run, 2026-09-24).
+old_story = {"url": "appointment", "title": "ACME appoints Jane Doe as Head of Digitalisation | ACME",
              "publish_date": iso(fresh),  # the crawl date, not the article's
-             "excerpts": ["# HENSOLDT appoints Sven Heursch as Head of Digitalisation 01/09/2025 Picture: HENSOLDT",
-                          f"More news: Air {fresh:%d/%m/%Y} HENSOLDT gets development contract"]}
-sidebar = {"url": "multivac", "title": "Broader basis with new four-man team at the top",
+             "excerpts": ["# ACME appoints Jane Doe as Head of Digitalisation 01/09/2025 Picture: ACME",
+                          f"More news: Air {fresh:%d/%m/%Y} ACME gets development contract"]}
+sidebar = {"url": "sidebar", "title": "Broader basis with new four-man team at the top",
            "publish_date": iso(fresh),
            "excerpts": [f"Breaking news Posted on: {fresh:%B %d, %Y} ...... ...... ...... ...... ...... ...... ...... "
                         "...... ...... ...... ...... Broader basis with new four-man team at the top. From 1 January 2023 on"]}
-date_line = {"url": "einhell", "title": "COMPACT SERIES: The Next Generation",
-             "excerpts": [f"Go back {de(fresh)} 00:00 COMPACT SERIES: The Next Generation. Related: {de(stale)} story"]}
+date_line = {"url": "dateline", "title": "PRO LINE: The Next Generation",
+             "excerpts": [f"Go back {de(fresh)} 00:00 PRO LINE: The Next Generation. Related: {de(stale)} story"]}
 fresh_text = {"url": "fresh-text", "title": "ACME opens a plant", "publish_date": iso(stale),
               "excerpts": [f"ACME opens a plant. Pressemitteilung vom {de(fresh)}"]}
 no_text_date = {"url": "no-text-date", "title": "ACME opens a plant", "publish_date": iso(fresh), "excerpts": ["ACME opens a plant."]}
 kept, dropped = filter_search_results_by_freshness([old_story, sidebar, date_line, fresh_text, no_text_date], 2)
-assert [r["url"] for r in kept] == ["einhell", "fresh-text", "no-text-date"] and dropped == {"stale": 2, "undated": 0}, (kept, dropped)
+assert [r["url"] for r in kept] == ["dateline", "fresh-text", "no-text-date"] and dropped == {"stale": 2, "undated": 0}, (kept, dropped)
 
 results = [
     {"url": "a", "publish_date": iso(fresh)},                          # dated by the provider, fresh
     {"url": "b", "publish_date": iso(stale)},                          # dated by the provider, stale
-    {"url": "c", "excerpts": [f"Pressemitteilung vom {de(fresh)}"]},   # undated, fresh date in text (ENGIE, PORR)
-    {"url": "d", "excerpts": [f"announced on {stale:%B %d, %Y}"]},    # undated, only stale dates (wn.com HOCHTIEF)
-    {"url": "e", "title": "ZECH Building SE", "excerpts": ["Hochbau aus einer Hand"]},  # undated directory page
+    {"url": "c", "excerpts": [f"Pressemitteilung vom {de(fresh)}"]},   # undated, fresh date in text (two builders' press pages)
+    {"url": "d", "excerpts": [f"announced on {stale:%B %d, %Y}"]},    # undated, only stale dates (a news aggregator)
+    {"url": "e", "title": "Acme Building SE", "excerpts": ["Hochbau aus einer Hand"]},  # undated directory page
 ]
 kept, dropped = filter_search_results_by_freshness(results, 2)
 assert [r["url"] for r in kept] == ["a", "c"] and dropped == {"stale": 2, "undated": 1}, (kept, dropped)
@@ -56,14 +56,14 @@ pages = [
 ]
 assert len(filter_crawl_pages_by_freshness(pages, 2)) == 1  # stale and undated pages used to be kept
 
-assert is_article_url("https://www.engie-deutschland.de/en/press/heating-transition-municipal-scale-engie-deutschland-take-over")
-assert is_article_url("https://www.porr.de/en/news-press/press-releases/detail/porr-baut-fuer-x-fab-chipfabrik-in-erfurt-1")
-assert is_article_url("https://www.linkedin.com/posts/klueh1911_legionellen-activity-123")
-for url in ("https://linkedin.com/company/klueh1911", "https://www.linkedin.com/in/someone",
-            "https://www.porr.de/en/news-press/press-releases", "https://www.klueh.de/en", "https://www.klueh.de/en/news/press-and-media"):
+assert is_article_url("https://www.acme-energie.de/en/press/heating-transition-municipal-scale-acme-energie-take-over")
+assert is_article_url("https://www.bau-ag.de/en/news-press/press-releases/detail/bau-ag-baut-chipfabrik-in-erfurt-1")
+assert is_article_url("https://www.linkedin.com/posts/acme-service_legionellen-activity-123")
+for url in ("https://linkedin.com/company/acme-service", "https://www.linkedin.com/in/someone",
+            "https://www.bau-ag.de/en/news-press/press-releases", "https://www.acme-service.de/en", "https://www.acme-service.de/en/news/press-and-media"):
     assert not is_article_url(url), url
-assert not _signal_is_valid({"source_url": "https://linkedin.com/company/klueh1911", "date": iso(fresh)}, now - timedelta(days=60))
-assert _signal_is_valid({"source_url": "https://www.porr.de/de/presse/porr-baut-x-fab", "date": iso(fresh)}, now - timedelta(days=60))
+assert not _signal_is_valid({"source_url": "https://linkedin.com/company/acme-service", "date": iso(fresh)}, now - timedelta(days=60))
+assert _signal_is_valid({"source_url": "https://www.bau-ag.de/de/presse/bau-ag-baut-chipfabrik", "date": iso(fresh)}, now - timedelta(days=60))
 
 # Firecrawl fallback pass: no second web search, the crawled pages still go through the cutoff.
 import json, tempfile
@@ -75,7 +75,7 @@ tmp = Path(tempfile.mkdtemp())
 for name in ("icp.md", "offering.md"):
     (tmp / "context" / name).write_text("x")
 (tmp / "context" / "signal_criteria.md").write_text(
-    "# Signal criteria — perma-trade\n\n## Include\n- Won a hospital project\n- Opened a branch\n\n## Not a signal\n- Heat-pump market news")
+    "# Signal criteria — Acme\n\n## Include\n- Won a hospital project\n- Opened a branch\n\n## Not a signal\n- Heat-pump market news")
 ctx = ss.ClientContext.load(tmp)
 bullets = ss.objective_bullets(ctx.signal_criteria)
 assert bullets == "- Won a hospital project\n- Opened a branch", bullets  # no seller title, no exclude half

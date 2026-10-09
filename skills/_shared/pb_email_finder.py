@@ -38,7 +38,7 @@ people-enrichment MANDATORY cross-check. Use --keep-mismatch to override.
 
 Usage:
     source "$HOME/.claude/skills/gtm-pipeline/_shared/resolve_env.sh"
-    export $(grep -E '^(PHANTOMBUSTER_API_KEY|GOOGLE_CLIENT_SECRET_FILE|GOOGLE_AUTHORIZED_USER_FILE|PB_AGENT_EMAIL)=' "$GTM_ENV_PATH" | xargs)
+    while IFS= read -r line; do export "$line"; done < <(grep -E '^(PHANTOMBUSTER_API_KEY|GOOGLE_CLIENT_SECRET_FILE|GOOGLE_AUTHORIZED_USER_FILE|PB_AGENT_EMAIL)=' "$GTM_ENV_PATH")
     python3 pb_email_finder.py \
         --input   csv/intermediate/contacts_filtered.csv \
         --output  csv/intermediate/contacts_pb_email.csv \
@@ -117,10 +117,10 @@ def _extract_sld(domain):
 def email_domain_matches(email, company_domain):
     """Return match | subdomain | other_tld | mismatch | "".
 
-    `other_tld` = same brand label, different TLD (obos.fr vs obos.no). That is usually a
+    `other_tld` = same brand label, different TLD (brand.fr vs brand.no). That is usually a
     DIFFERENT legal entity in another country (measured 2026-09-17: PB returned
-    morten.kjaerland@obos.fr for a contact at obos.no), occasionally a real parent domain
-    (stena.com for stenafastigheter.se). It is never safe to auto-keep: callers drop it like a
+    first.last@brand.fr for a contact at brand.no), occasionally a real parent domain
+    (group.com for groupproperties.se). It is never safe to auto-keep: callers drop it like a
     mismatch unless a human confirms the domain belongs to the target.
     """
     if not email or "@" not in email:
