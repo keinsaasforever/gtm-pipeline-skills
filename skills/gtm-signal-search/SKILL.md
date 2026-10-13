@@ -112,6 +112,7 @@ Use AskUserQuestion to confirm. Defaults:
 |--------|---------|----------------|
 | Parallel web search | ON (always) | — |
 | Site-search fallback | LAST RESORT | Runs after scoring on the companies web search left without a signal (Step 5c). Three interchangeable providers via `--site-search`: TinyFish (free, default recommendation), Firecrawl, Tavily (1 credit) — pick one per run, or run more than one to compare. Nothing to decide here unless comparing providers. |
+| Job feeds (ATS, Arbeitsagentur) | AUTO | On when `signal_criteria.md` asks for hiring; free. Nothing to decide (see "Hiring signals"). |
 | Parallel structured enrichment | OFF | Enable when **structured fields are required downstream** — funding stage, hiring signals with job URLs, tech stack indicators that need to live in their own CSV columns. Skip if the scored signals JSON is enough. |
 
 ### Step 5 — Run the script
@@ -280,27 +281,31 @@ A company still without a kept signal stays ICP-fit.
 With no agent in the loop (`claude-cli` backend), `--crawl-only --site-search {tinyfish,firecrawl,tavily}`
 runs the chosen provider's site search itself (cost ceilings above).
 
-### Hiring signals: ATS job feeds (`--ats-jobs`)
+### Hiring signals: job feeds (ATS and Arbeitsagentur)
 
-Add `--ats-jobs` when the client's `signal_criteria.md` includes hiring. Site search drops careers and
-job pages on purpose (a job page rarely prints its date), so without it a hiring signal seldom
-survives. The flag reads the company's public ATS feed instead, where every posting has a publish
-date. The board comes from an ATS link on the company's own site: the homepage, the careers pages it
-links to (a careers subdomain or careers domain included, never a job portal) and the jobs pages those
-link to; `/karriere`, `/jobs` and `/careers` only when the homepage links none. Never from a token
-guessed off the domain. With `TINYFISH_API_KEY` exported, a site where the plain read finds no ATS is
-rendered with TinyFish fetch (free), which catches pages built by JavaScript and ATS iframes.
+The job feeds run on their own whenever the include half of `signal_criteria.md` asks for hiring
+(hiring, recruiting, job ads, Stellenanzeigen, Einstellung, …); `--ats-jobs` forces them on and
+`--no-ats-jobs` off. Site search drops careers and job pages on purpose (a job page rarely prints its
+date), so without the feeds a hiring signal seldom survives. Both feeds are free and date every posting.
+
+- **ATS feed.** The board comes from an ATS link on the company's own site: the homepage, the careers
+  pages it links to (a careers subdomain or careers domain included, never a job portal) and the jobs
+  pages those link to; `/karriere`, `/jobs` and `/careers` only when the homepage links none. Never from
+  a token guessed off the domain. With `TINYFISH_API_KEY` exported, a site where the plain read finds
+  no ATS is rendered with TinyFish fetch (free), which catches pages built by JavaScript and ATS
+  iframes. Supported: Greenhouse (EU boards too), Ashby, Lever (global and EU), Personio, Workable,
+  SmartRecruiters (title and date only), Recruitee, Teamtailor (`*.teamtailor.com` hosts).
+- **Arbeitsagentur**, for a German company (country DE, or a `.de` domain): where small German trades
+  post. One search call per company, no detail calls. Only postings whose employer is the company
+  itself count (legal form, case and punctuation aside; staffing agencies excluded), dated by their
+  first publication: the search's own date filter goes by the latest republish, so it also returns ads
+  first posted months ago. Each links to its public `arbeitsagentur.de/jobsuche/jobdetail/…` page.
+
 Postings published inside the lookback window (newest 20) join the company's website pages, so the
-same freshness gate, extraction and 5b rubric apply; cite the posting URL. It works on either pass,
-e.g. `--crawl-only --site-search tinyfish --ats-jobs`, and `--crawl-only --ats-jobs` alone reads only
-the feeds.
-
-Supported: Greenhouse (EU boards too), Ashby, Lever (global and EU), Personio, Workable,
-SmartRecruiters (title and date only), Recruitee, Teamtailor (`*.teamtailor.com` hosts). **Free:**
-public feeds, no key. With no supported ATS, the rendered careers pages (at most 3) join the website
-pages as they are; one passes only on a fresh date it prints itself, and a signal from it cites the
-posting's own link, never the careers page. A company whose site yields neither, or whose feed fails,
-is logged and skipped.
+same freshness gate, extraction and 5b rubric apply; cite the posting URL. With no supported ATS, the
+rendered careers pages (at most 3) join them as they are; one passes only on a fresh date it prints
+itself, and a signal from it cites the posting's own link, never the careers page. The feeds run on
+either pass (`--crawl-only` alone reads only them). A source that fails is logged and skipped.
 
 ### Step 6 — Review and log
 
@@ -323,7 +328,7 @@ Append a run summary to `run_log.md` per `conventions.md` (records processed, hi
 --firecrawl                     alias for --site-search firecrawl (old callers)
 --firecrawl-pages-dir PATH      read fetched pages from PATH/{domain}.json instead of calling a site-search API (no key; TinyFish/MCP route)
 --crawl-only                    site-search fallback pass (Step 5c): no web search; writes signals_crawl.csv + signals_raw_crawl/
---ats-jobs                      add dated postings from the company's public ATS feed as website pages (free; see "Hiring signals")
+--ats-jobs / --no-ats-jobs      force the job feeds (ATS, Arbeitsagentur) on or off; default: on when signal_criteria.md asks for hiring
 --parallel-enrichment           enable Parallel structured enrichment
 --llm-backend {agent,claude-cli,openrouter}   where extraction+scoring happen (default: agent)
 --raw-evidence-dir PATH         where the agent backend writes raw evidence (default: csv/intermediate/signals_raw/)
@@ -408,7 +413,7 @@ If any of these templates need to evolve (e.g. the n8n workflow's scoring rubric
 
 - Parallel web search (`pro` is unused here; we use the default `one-shot` mode): ~1 credit per company
 - Site-search fallback (`--site-search`): TinyFish free; Tavily 1 credit per company; Firecrawl 2 credits per search + 1 per scraped page, ≤ 7 per company — only for companies web search left without a signal
-- ATS job feeds (`--ats-jobs`): free
+- Job feeds (ATS, Arbeitsagentur): free
 - Parallel enrichment (`processor: core`): ~5 credits per company
 - **`agent` backend (default): no external LLM cost** — the agent scores in-context (counts as normal session tokens). `openrouter` backend (legacy): ~USD 0.006–0.018 per company.
 

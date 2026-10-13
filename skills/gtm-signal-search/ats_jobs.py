@@ -9,7 +9,9 @@ iframes injected by an ATS widget. The token always comes from a link on the emp
 never a guess from the domain: a guessed token can belong to another company with the same name.
 Without an ATS, detect returns the rendered careers pages for the caller to scrape.
 jobs(ats, board) returns [{title, url, published, text}]: url is the public posting page, published
-is YYYY-MM-DD ("" when the feed has no date).
+is YYYY-MM-DD ("" when the feed has no date). arbeitsagentur(name, days) returns the same for a German
+employer's postings on the Federal Employment Agency's job board. wants_job_signals(criteria) says
+whether a client's signal criteria ask for hiring.
 
 Public read routes (no key for any of them):
   Greenhouse       boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true  docs.greenhouse.io/job-board.html
@@ -22,6 +24,8 @@ Public read routes (no key for any of them):
                    2027-02-10; the XML feed stays open: docs.recruitee.com/reference/authentication-1)
   Teamtailor       {careers host}/jobs.rss                     support.teamtailor.com/en/articles/11171756
 Rendering: TinyFish fetch, POST api.fetch.tinyfish.ai with links + iframe_links  docs.tinyfish.ai/fetch-api/reference
+Arbeitsagentur: rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs, X-API-Key jobboerse-jobsuche
+                (the public clientId)  jobsuche.api.bund.dev
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
@@ -44,6 +48,13 @@ MAX_PAGES = 8  # pages read per company and per reader: the homepage plus career
 CAREERS_WORDS = re.compile(r"\bkarriere|\bcareers?\b|\bjobs?\b|/stellen\b|\bstellen(?:angebot|markt|anzeige)"
                            r"|(?:offene|freie)\s+stellen|arbeiten\s+bei|join\s+us", re.I)
 MAX_POSTINGS = 1000  # ponytail: paginated feeds stop at 1000 postings; raise it for a bigger board
+ARBEITSAGENTUR_URL = "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs"
+# Legal forms dropped before two employer names are compared ("Acme Elektro GmbH & Co. KG").
+_LEGAL_FORMS = re.compile(r"\b(?:gmbh|mbh|ag|kgaa|kg|se|ug|ohg|gbr|e\s?k|e\s?v|co|inh|haftungsbeschränkt)\b")
+# Signal criteria that ask for hiring turn the job feeds on (signal_search.py, unless --no-ats-jobs).
+HIRING_WORDS = re.compile(r"\bhiring\b|\bhires?\b|recruit|\bjob\s*(?:ads?|postings?|openings?|offers?)\b|\bvacanc"
+                          r"|open\s+(?:roles|positions)|stellen(?:anzeige|angebot|ausschreibung|markt)|(?:offene|neue)\s+stellen"
+                          r"|\bstell(?:t|en)\s+\w*\s*ein\b|einstellung|personalbedarf|personalsuche", re.I)
 
 _TOKEN = r"([A-Za-z0-9_-]+)"
 # (ats, pattern after "//"), tried in order on every href/src; group 1 is the board token or host.
@@ -88,9 +99,9 @@ def plain(raw: str | None) -> str:
     return re.sub(r"\s*\n\s*", "\n", text).strip()
 
 
-def _open(url: str) -> tuple[str, bytes]:
+def _open(url: str, headers: dict | None = None) -> tuple[str, bytes]:
     """(final URL after redirects, body)."""
-    with urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=TIMEOUT) as resp:
+    with urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0", **(headers or {})}), timeout=TIMEOUT) as resp:
         return resp.geturl(), resp.read()
 
 
@@ -289,4 +300,35 @@ ADAPTERS = {
 def jobs(ats: str, board: str) -> list[dict]:
     """The board's open postings. Raises on a fetch or parse error; the caller logs and skips."""
     return [j for j in ADAPTERS[ats](board) if j["title"] and j["url"]]
+
+
+def company_key(name: str | None) -> str:
+    """An employer name without legal form, case and punctuation, for an exact comparison."""
+    words = re.sub(r"[^\w\s]", " ", (name or "").lower())
+    return " ".join(_LEGAL_FORMS.sub(" ", words).split())
+
+
+def arbeitsagentur(company_name: str, days: int) -> list[dict]:
+    """Postings on the Arbeitsagentur job board whose employer is the company itself: one search call,
+    no detail calls. The search also returns other employers (a sister company at the same address) and
+    staffing agencies; zeitarbeit=false drops the agencies, the exact name match the rest.
+    veroeffentlichtseit (0-100 days) filters by the latest republish date, so an ad first posted months
+    ago comes back; published is datumErsteVeroeffentlichung, the first publication, which the live
+    response carries though the OpenAPI spec does not list it (checked 2026-10-13)."""
+    query = urlencode({"was": company_name, "veroeffentlichtseit": min(days, 100), "size": 25, "zeitarbeit": "false"})
+    data = json.loads(_open(f"{ARBEITSAGENTUR_URL}?{query}", {"X-API-Key": "jobboerse-jobsuche"})[1])
+    key, out = company_key(company_name), []
+    for j in data.get("ergebnisliste") or []:
+        if company_key(j.get("firma")) != key or not j.get("referenznummer"):
+            continue
+        place = ((j.get("stellenlokationen") or [{}])[0].get("adresse") or {}).get("ort") or ""
+        out.append(_job(j.get("stellenangebotsTitel"), f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{j['referenznummer']}",
+                        j.get("datumErsteVeroeffentlichung"), ", ".join(x for x in (j.get("firma"), place) if x)))
+    return out
+
+
+def wants_job_signals(signal_criteria: str) -> bool:
+    """Whether the include half of signal_criteria.md asks for hiring; the "Not a signal:" half doesn't count."""
+    include = re.split(r"(?im)^[#*_\s]*(?:not a signal|not signals|exclude)", signal_criteria or "")[0]
+    return bool(HIRING_WORDS.search(include))
 
