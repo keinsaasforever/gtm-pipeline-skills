@@ -280,6 +280,21 @@ A company still without a kept signal stays ICP-fit.
 With no agent in the loop (`claude-cli` backend), `--crawl-only --site-search {tinyfish,firecrawl,tavily}`
 runs the chosen provider's site search itself (cost ceilings above).
 
+### Hiring signals: ATS job feeds (`--ats-jobs`)
+
+Add `--ats-jobs` when the client's `signal_criteria.md` includes hiring. Site search drops careers and
+job pages on purpose (a job page rarely prints its date), so without it a hiring signal seldom
+survives. The flag reads the company's public ATS feed instead, where every posting has a publish
+date. The board comes from the ATS link on the company's own homepage, `/karriere`, `/jobs` or
+`/careers`, never from a token guessed off the domain. Postings published inside the lookback window
+(newest 20) join the company's website pages, so the same freshness gate, extraction and 5b rubric
+apply; cite the posting URL. It works on either pass, e.g. `--crawl-only --site-search tinyfish
+--ats-jobs`, and `--crawl-only --ats-jobs` alone reads only the feeds.
+
+Supported: Greenhouse, Ashby, Lever (global and EU), Personio, Workable, SmartRecruiters (title and
+date only), Recruitee, Teamtailor (`*.teamtailor.com` hosts). **Free:** public feeds, no key. A
+company whose site links none of them, or whose feed fails, is logged and skipped.
+
 ### Step 6 — Review and log
 
 Open `csv/intermediate/signals.csv`. Inspect actual rows for 2–3 companies:
@@ -301,6 +316,7 @@ Append a run summary to `run_log.md` per `conventions.md` (records processed, hi
 --firecrawl                     alias for --site-search firecrawl (old callers)
 --firecrawl-pages-dir PATH      read fetched pages from PATH/{domain}.json instead of calling a site-search API (no key; TinyFish/MCP route)
 --crawl-only                    site-search fallback pass (Step 5c): no web search; writes signals_crawl.csv + signals_raw_crawl/
+--ats-jobs                      add dated postings from the company's public ATS feed as website pages (free; see "Hiring signals")
 --parallel-enrichment           enable Parallel structured enrichment
 --llm-backend {agent,claude-cli,openrouter}   where extraction+scoring happen (default: agent)
 --raw-evidence-dir PATH         where the agent backend writes raw evidence (default: csv/intermediate/signals_raw/)
@@ -385,6 +401,7 @@ If any of these templates need to evolve (e.g. the n8n workflow's scoring rubric
 
 - Parallel web search (`pro` is unused here; we use the default `one-shot` mode): ~1 credit per company
 - Site-search fallback (`--site-search`): TinyFish free; Tavily 1 credit per company; Firecrawl 2 credits per search + 1 per scraped page, ≤ 7 per company — only for companies web search left without a signal
+- ATS job feeds (`--ats-jobs`): free
 - Parallel enrichment (`processor: core`): ~5 credits per company
 - **`agent` backend (default): no external LLM cost** — the agent scores in-context (counts as normal session tokens). `openrouter` backend (legacy): ~USD 0.006–0.018 per company.
 

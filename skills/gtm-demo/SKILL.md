@@ -403,7 +403,7 @@ while IFS= read -r line; do export "$line"; done < <(grep -E '^(PARALLEL_API_KEY
     --client-dir {client-slug}-gtm
 ```
 
-The `resolve_env.sh` source line ensures `$GTM_ENV_PATH` is set even in a fresh shell (see signal-search SKILL.md / conventions). For the demo, leave Parallel enrichment **OFF**. After scoring, run the **site-search fallback** (signal-search Step 5c, `--crawl-only --site-search tinyfish`, free) on the companies left without a kept signal: at most 5 pages each, scored with the same rubric. `firecrawl` (≤ 7 credits per company) and `tavily` (1 credit) are selectable for comparison. Every company it turns up a signal for moves from ICP-first to Signal-first.
+The `resolve_env.sh` source line ensures `$GTM_ENV_PATH` is set even in a fresh shell (see signal-search SKILL.md / conventions). For the demo, leave Parallel enrichment **OFF**. After scoring, run the **site-search fallback** (signal-search Step 5c, `--crawl-only --site-search tinyfish`, free) on the companies left without a kept signal: at most 5 pages each, scored with the same rubric. `firecrawl` (≤ 7 credits per company) and `tavily` (1 credit) are selectable for comparison. Every company it turns up a signal for moves from ICP-first to Signal-first. When the signal criteria include hiring, run it with `--ats-jobs` (free; dated postings from the company's public job board, signal-search "Hiring signals").
 
 **LinkedIn topic posts are optional, off by default, and interactive only** (headless: never). Use them when the
 client's best signal is people posting about a topic *and* the operator asks for it.

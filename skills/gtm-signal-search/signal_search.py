@@ -16,6 +16,8 @@ Sources (run per company, in parallel where possible):
                                  --site-search {tinyfish,firecrawl,tavily} (--firecrawl is an alias
                                  for --site-search firecrawl, kept for old callers)
   3. Parallel enrichment       — opt-in (--parallel-enrichment)
+  3b. ATS job feeds            — opt-in (--ats-jobs): dated postings from the company's public ATS
+                                 board (ats_jobs.py), scored as website pages; free
   4. Signal Assessment LLM     — always on, scores merged signals 1–100
 
 Inputs from the client working directory:
@@ -54,6 +56,8 @@ from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 
+import ats_jobs
+
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Universal templates — ported verbatim from the n8n workflow.
@@ -75,6 +79,9 @@ SITE_SEARCH_WORDS = "news OR press OR presse OR pressemitteilung OR aktuelles"
 # legal pages (measured 2026-09-29).
 SITE_SEARCH_QUERY = "site:{domain} " + SITE_SEARCH_WORDS
 SITE_SEARCH_MAX_PAGES = 5
+# --ats-jobs: newest postings kept per company, and ad text per posting, so a big board can't flood the evidence.
+ATS_MAX_POSTINGS = 20
+ATS_TEXT_CHARS = 3000
 PARALLEL_TASK_GROUP_URL = "https://api.parallel.ai/v1/tasks/groups"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -700,6 +707,25 @@ def tavily_site_search(domain: str, lookback_months: int, api_key: str) -> list[
     return pages
 
 
+def ats_job_pages(domain: str, lookback_months: int) -> list[dict]:
+    """Postings from the company's public ATS feed (--ats-jobs) published inside the window, as website
+    pages. The posting date goes right before the title, so source_date() reads it as the page's date line
+    and the usual freshness gate keeps the page. A detection or feed failure is logged and skipped."""
+    try:
+        found = ats_jobs.detect(domain)
+        postings = ats_jobs.jobs(*found) if found else []
+    except Exception as e:
+        print(f"  {domain}: ATS jobs skipped ({e})", file=sys.stderr)
+        return []
+    fresh = sorted((j for j in postings if is_fresh(dates_in(j["published"]), lookback_months)),
+                   key=lambda j: j["published"], reverse=True)[:ATS_MAX_POSTINGS]
+    if found:
+        print(f"  {domain}: {found[0]}:{found[1]}, {len(postings)} postings, {len(fresh)} inside the window")
+    return [{"markdown": f"{j['published']} {j['title']}\n\n{j['text'][:ATS_TEXT_CHARS]}",
+             "metadata": {"title": j["title"], "sourceURL": j["url"], "publishedTime": j["published"]}}
+            for j in fresh]
+
+
 # ────────────────────────────────────────────────────────────────────────────────
 # Freshness: the lookback cutoff is enforced on the evidence, before extraction or scoring
 # ────────────────────────────────────────────────────────────────────────────────
@@ -1103,6 +1129,8 @@ class RunConfig:
     firecrawl_pages_dir: Path | None = None
     # The site-search fallback pass (SKILL.md Step 5c): search only, no second paid web search.
     crawl_only: bool = False
+    # Add dated postings from the company's public ATS feed to its website pages (free).
+    ats_jobs: bool = False
 
 
 def extract_domain(website: str) -> str:
@@ -1166,6 +1194,8 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
     # Every crawled URL, the dropped ones too: its length is the site-search credits spent, and it
     # is the only way to tell afterwards whether the search picked the wrong pages or had nothing.
     urls_crawled = [(p.get("metadata") or {}).get("sourceURL") or (p.get("metadata") or {}).get("url") for p in pages]
+    if cfg.ats_jobs:
+        pages += ats_job_pages(company_domain, cfg.lookback_months)
     if pages:
         pages = filter_crawl_pages_by_freshness(pages, cfg.lookback_months)
 
@@ -1254,9 +1284,12 @@ def parse_args() -> argparse.Namespace:
                         "site-search API. Use when you only have TinyFish or Firecrawl via MCP "
                         "(no API key): the agent fetched and writes the page files.")
     p.add_argument("--crawl-only", action="store_true",
-                   help="Site-search fallback pass (SKILL.md Step 5c): no web search. Needs --site-search "
-                        "or --firecrawl-pages-dir. Writes signals_crawl.csv + signals_raw_crawl/, so the "
+                   help="Site-search fallback pass (SKILL.md Step 5c): no web search. Needs --site-search, "
+                        "--firecrawl-pages-dir or --ats-jobs. Writes signals_crawl.csv + signals_raw_crawl/, so the "
                         "first pass is kept.")
+    p.add_argument("--ats-jobs", action="store_true",
+                   help="Add dated job postings from the company's public ATS feed (Greenhouse, Ashby, Lever, "
+                        "Personio, Workable, SmartRecruiters, Recruitee, Teamtailor) as website pages. Free.")
     p.add_argument("--parallel-enrichment", action="store_true",
                    help="Enable Parallel structured enrichment (extra cost; useful for funding/hiring data points)")
     p.add_argument("--llm-backend", choices=["agent", "claude-cli", "openrouter"],
@@ -1298,8 +1331,8 @@ def main() -> int:
         return 1
 
     site_search = args.site_search or ("firecrawl" if args.firecrawl else None)  # --firecrawl is an alias
-    if args.crawl_only and not (site_search or args.firecrawl_pages_dir):
-        print("ERROR: --crawl-only needs --site-search {tinyfish,firecrawl,tavily} or --firecrawl-pages-dir",
+    if args.crawl_only and not (site_search or args.firecrawl_pages_dir or args.ats_jobs):
+        print("ERROR: --crawl-only needs --site-search {tinyfish,firecrawl,tavily}, --firecrawl-pages-dir or --ats-jobs",
               file=sys.stderr)
         return 1
     suffix = "_crawl" if args.crawl_only else ""  # the fallback pass never overwrites the first
@@ -1362,6 +1395,7 @@ def main() -> int:
     print(f"Sources enabled: web_search={'OFF (crawl-only)' if args.crawl_only else 'ON'} "
           f"(max_results={args.max_results}), "
           f"site_search={site_search_mode}, "
+          f"ats_jobs={'ON' if args.ats_jobs else 'OFF'}, "
           f"parallel_enrichment={'ON' if args.parallel_enrichment else 'OFF'}")
     print(f"LLM backend: {args.llm_backend}")
     if args.llm_backend == "agent":
@@ -1402,6 +1436,7 @@ def main() -> int:
         tavily_key=tavily_key or None,
         firecrawl_pages_dir=args.firecrawl_pages_dir,
         crawl_only=args.crawl_only,
+        ats_jobs=args.ats_jobs,
         raw_evidence_dir=raw_evidence_dir if args.llm_backend == "agent" else None,
     )
 
