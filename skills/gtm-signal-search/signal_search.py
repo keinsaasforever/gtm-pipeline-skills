@@ -33,7 +33,7 @@ Required env vars (via GTM_ENV_PATH per conventions.md):
   OPENROUTER_API_KEY   — extraction + scoring LLMs
   One of these, only if selected via --site-search:
   FIRECRAWL_API_KEY    — --site-search firecrawl
-  TINYFISH_API_KEY     — --site-search tinyfish
+  TINYFISH_API_KEY     — --site-search tinyfish; --ats-jobs renders careers pages with it when set
   TAVILY_API_KEY       — --site-search tavily
 """
 
@@ -707,16 +707,21 @@ def tavily_site_search(domain: str, lookback_months: int, api_key: str) -> list[
     return pages
 
 
-def ats_job_pages(domain: str, lookback_months: int) -> list[dict]:
+def ats_job_pages(domain: str, lookback_months: int, tinyfish_key: str | None = None) -> list[dict]:
     """Postings from the company's public ATS feed (--ats-jobs) published inside the window, as website
     pages. The posting date goes right before the title, so source_date() reads it as the page's date line
-    and the usual freshness gate keeps the page. A detection or feed failure is logged and skipped."""
+    and the usual freshness gate keeps the page. With no known ATS, the careers pages TinyFish rendered go
+    in as they are, with no metadata date: only a page that prints a fresh date passes the gate. A
+    detection or feed failure is logged and skipped."""
     try:
-        found = ats_jobs.detect(domain)
+        found, careers_pages = ats_jobs.detect(domain, tinyfish_key)
         postings = ats_jobs.jobs(*found) if found else []
     except Exception as e:
         print(f"  {domain}: ATS jobs skipped ({e})", file=sys.stderr)
         return []
+    if careers_pages:
+        print(f"  {domain}: no known ATS, {len(careers_pages)} careers page(s) scraped")
+        return careers_pages
     fresh = sorted((j for j in postings if is_fresh(dates_in(j["published"]), lookback_months)),
                    key=lambda j: j["published"], reverse=True)[:ATS_MAX_POSTINGS]
     if found:
@@ -1195,7 +1200,7 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
     # is the only way to tell afterwards whether the search picked the wrong pages or had nothing.
     urls_crawled = [(p.get("metadata") or {}).get("sourceURL") or (p.get("metadata") or {}).get("url") for p in pages]
     if cfg.ats_jobs:
-        pages += ats_job_pages(company_domain, cfg.lookback_months)
+        pages += ats_job_pages(company_domain, cfg.lookback_months, cfg.tinyfish_key)
     if pages:
         pages = filter_crawl_pages_by_freshness(pages, cfg.lookback_months)
 

@@ -1,4 +1,5 @@
-"""ATS job feeds (--ats-jobs): detection, one parse per adapter, the lookback filter. No network. python3 test_ats_jobs.py"""
+"""ATS job feeds (--ats-jobs): detection, one parse per adapter, the lookback filter, the careers-page fallback.
+No network. python3 test_ats_jobs.py"""
 import json
 import os
 import sys
@@ -12,6 +13,7 @@ import signal_search as ss
 links = {
     '<a href="https://boards.greenhouse.io/acme">Jobs</a>': ("greenhouse", "acme"),
     '<a href="https://job-boards.greenhouse.io/acme/jobs/123">Job</a>': ("greenhouse", "acme"),
+    '<a href="https://job-boards.eu.greenhouse.io/acme">Jobs</a>': ("greenhouse", "acme"),
     '<script src="https://boards.greenhouse.io/embed/job_board/js?for=acme"></script>': ("greenhouse", "acme"),
     '<iframe src="https://job-boards.greenhouse.io/embed/job_board?for=acme&amp;b=x"></iframe>': ("greenhouse", "acme"),
     "<a href='https://jobs.ashbyhq.com/acme'>": ("ashby", "acme"),
@@ -25,26 +27,52 @@ links = {
     '<a href="https://acmesolar.recruitee.com/">': ("recruitee", "acmesolar"),
     '<a href="//acme.teamtailor.com/jobs">': ("teamtailor", "acme.teamtailor.com"),
 }
+board = lambda html: a.board_from_links(a.parse_html("https://acme.de/", html)["srcs"])
 for html, want in links.items():
-    assert a.board_from_html(html) == want, (html, a.board_from_html(html))
+    assert board(html) == want, (html, board(html))
 for html in ('<a href="https://www.recruitee.com/?utm=powered">', '<a href="https://www.teamtailor.com/en">',
              '<a href="https://app.teamtailor.com/x">', '<a href="https://apply.workable.com/j/AB12">',
              '<a href="/karriere">Karriere</a>', "<p>boards.greenhouse.io/acme</p>"):  # vendor pages, own links, plain text
-    assert a.board_from_html(html) is None, html
+    assert board(html) is None, html
 
-# detect(): homepage first, then /karriere, /jobs, /careers; a page that fails to load is skipped.
+# detect() follows careers links from the homepage, two clicks deep, onto a careers subdomain or a
+# careers domain, never onto a job portal; /karriere, /jobs, /careers only when the homepage links none.
+# A page that fails to load is skipped.
 def serve(pages):
-    def get(url):
+    def open_(url):
         if url not in pages:
             raise OSError(f"404 {url}")
-        return pages[url] if isinstance(pages[url], bytes) else pages[url].encode()
-    a._get = get
+        return url, pages[url] if isinstance(pages[url], bytes) else pages[url].encode()
+    a._open = open_
 
-serve({"https://acme.de": '<a href="/karriere">Karriere</a>',
+serve({"https://acme.de": '<a href="https://karriere.acme.de/">Arbeiten bei ACME</a><a href="/anfrage">PV Anfrage stellen</a>',
+       "https://karriere.acme.de/": '<a href="/offene-stellen">Offene Stellen</a>',
+       "https://karriere.acme.de/offene-stellen": '<iframe src="https://acme.jobs.personio.de/"></iframe>'})
+assert a.detect("acme.de") == (("personio", "acme.jobs.personio.de"), [])
+serve({"https://acme.de": '<a href="https://acme-jobs.de/">Team</a>',
+       "https://acme-jobs.de/": '<a href="https://acme.recruitee.com/">Bewerben</a>'})
+assert a.detect("acme.de") == (("recruitee", "acme"), [])
+serve({"https://acme.de": '<a href="https://www.stepstone.de/cmp/acme/jobs">Jobs</a>',
+       "https://www.stepstone.de/cmp/acme/jobs": '<a href="https://other.recruitee.com/">x</a>',
        "https://acme.de/jobs": '<iframe src="https://acme.jobs.personio.de/"></iframe>'})
-assert a.detect("acme.de") == ("personio", "acme.jobs.personio.de")
+assert a.detect("acme.de") == (("personio", "acme.jobs.personio.de"), [])  # the portal is skipped, /jobs is tried
 serve({"https://acme.de": "<p>no jobs</p>"})
-assert a.detect("acme.de") is None
+assert a.detect("acme.de") == (None, [])
+
+# With a TinyFish key, a site the plain read found nothing on is rendered: links and iframe_links
+# carry what JavaScript built. Without an ATS the rendered careers pages come back for scraping.
+rendered = {
+    "https://acme.de": {"url": "https://www.acme.de/", "title": "ACME", "text": "Home",
+                        "anchors": [("https://www.acme.de/karriere", "")], "srcs": ["https://www.acme.de/karriere"]},
+    "https://www.acme.de/karriere": {"url": "https://www.acme.de/karriere", "title": "Karriere", "text": "Elektriker gesucht",
+                                     "anchors": [], "srcs": ["https://acme.teamtailor.com/jobs"]},
+}
+a._read_rendered = lambda urls, key: [rendered[u] for u in urls if u in rendered]
+assert a.detect("acme.de") == (None, [])  # no key: no render
+assert a.detect("acme.de", "key") == (("teamtailor", "acme.teamtailor.com"), [])
+rendered["https://www.acme.de/karriere"]["srcs"] = []
+assert a.detect("acme.de", "key") == (None, [{"markdown": "Elektriker gesucht",
+                                              "metadata": {"title": "Karriere", "sourceURL": "https://www.acme.de/karriere"}}])
 
 # One parse per adapter: public posting URL, YYYY-MM-DD date, plain text.
 serve({
@@ -95,7 +123,7 @@ for (ats, board), (title, url, published, text) in want.items():
 # Lookback: only postings published inside the window become pages, newest first, and they pass the
 # same freshness gate as any website page. A failure is skipped, never raised.
 day = lambda n: (datetime.utcnow() - timedelta(days=n)).strftime("%Y-%m-%d")
-a.detect = lambda domain: ("recruitee", "acmesolar")
+a.detect = lambda domain, key=None: (("recruitee", "acmesolar"), [])
 a.jobs = lambda ats, board: [
     {"title": "Elektriker PV-Anlagen", "url": "u/new", "published": day(3), "text": "Seit 01.03.2015 bauen wir PV."},
     {"title": "Old", "url": "u/old", "published": day(90), "text": ""},
@@ -107,4 +135,12 @@ assert [p["metadata"]["sourceURL"] for p in pages] == ["u/new", "u/mid"], pages
 assert ss.filter_crawl_pages_by_freshness(pages, 2) == pages  # an older date in the ad text doesn't override the posting date
 a.jobs = lambda ats, board: (_ for _ in ()).throw(OSError("HTTP 404"))
 assert ss.ats_job_pages("acme.de", 2) == []
+
+# A careers page without a known ATS goes in as it is and passes only on a fresh date it prints itself.
+careers = [{"markdown": f"Elektriker (m/w/d), veröffentlicht am {datetime.utcnow() - timedelta(days=5):%d.%m.%Y}",
+            "metadata": {"title": "Karriere", "sourceURL": "https://acme.de/karriere"}},
+           {"markdown": "Wir suchen immer gute Leute.", "metadata": {"title": "Jobs", "sourceURL": "https://acme.de/jobs"}}]
+a.detect = lambda domain, key=None: (None, careers)
+pages = ss.ats_job_pages("acme.de", 2, "key")
+assert pages == careers and ss.filter_crawl_pages_by_freshness(pages, 2) == careers[:1]
 print("ok")

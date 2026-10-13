@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Public ATS job feeds: dated hiring signals for signal_search.py --ats-jobs. Free, no key, stdlib only.
+Public ATS job feeds: dated hiring signals for signal_search.py --ats-jobs. Free, stdlib only.
 
-detect(domain) reads the ATS and board token off the company's own pages (the homepage, then
-/karriere, /jobs, /careers). The token always comes from the employer's own careers link, never a
-guess from the domain: a guessed token can belong to another company with the same name.
+detect(domain) reads the ATS and board token off the company's own site: the homepage, the careers
+pages it links to, and the jobs pages those link to. It reads them plainly first; when that finds no
+ATS and a TinyFish key is given, it renders them (free), which catches pages built by JavaScript and
+iframes injected by an ATS widget. The token always comes from a link on the employer's own site,
+never a guess from the domain: a guessed token can belong to another company with the same name.
+Without an ATS, detect returns the rendered careers pages for the caller to scrape.
 jobs(ats, board) returns [{title, url, published, text}]: url is the public posting page, published
 is YYYY-MM-DD ("" when the feed has no date).
 
@@ -18,6 +21,7 @@ Public read routes (no key for any of them):
   Recruitee        {board}.recruitee.com/api/feeds/offers.xml  (not the JSON /api/offers/, which needs a token from
                    2027-02-10; the XML feed stays open: docs.recruitee.com/reference/authentication-1)
   Teamtailor       {careers host}/jobs.rss                     support.teamtailor.com/en/articles/11171756
+Rendering: TinyFish fetch, POST api.fetch.tinyfish.ai with links + iframe_links  docs.tinyfish.ai/fetch-api/reference
 """
 
 from __future__ import annotations
@@ -28,18 +32,25 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
+from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
 TIMEOUT = 20
-CAREERS_PATHS = ("/karriere", "/jobs", "/careers")
+TINYFISH_FETCH_URL = "https://api.fetch.tinyfish.ai/"
+CAREERS_PATHS = ("/karriere", "/jobs", "/careers")  # tried when the homepage links no careers page
+MAX_PAGES = 8  # pages read per company and per reader: the homepage plus careers and jobs pages
+# A careers link names careers in its host, path or anchor text ("Anfrage stellen" is not a job).
+CAREERS_WORDS = re.compile(r"\bkarriere|\bcareers?\b|\bjobs?\b|/stellen\b|\bstellen(?:angebot|markt|anzeige)"
+                           r"|(?:offene|freie)\s+stellen|arbeiten\s+bei|join\s+us", re.I)
 MAX_POSTINGS = 1000  # ponytail: paginated feeds stop at 1000 postings; raise it for a bigger board
 
 _TOKEN = r"([A-Za-z0-9_-]+)"
 # (ats, pattern after "//"), tried in order on every href/src; group 1 is the board token or host.
 ATS_LINKS = (
-    ("greenhouse", r"(?:job-)?boards\.greenhouse\.io/embed/[^?]*\?(?:[^#]*&)?for=" + _TOKEN),
-    ("greenhouse", r"(?:job-)?boards\.greenhouse\.io/" + _TOKEN),
+    # An EU board (job-boards.eu.greenhouse.io) reads through the same API (checked live, 2026-10-13).
+    ("greenhouse", r"(?:job-boards(?:\.eu)?|boards)\.greenhouse\.io/embed/[^?]*\?(?:[^#]*&)?for=" + _TOKEN),
+    ("greenhouse", r"(?:job-boards(?:\.eu)?|boards)\.greenhouse\.io/" + _TOKEN),
     ("ashby", r"jobs\.ashbyhq\.com/" + _TOKEN),
     ("lever", r"jobs\.lever\.co/" + _TOKEN),
     ("lever-eu", r"jobs\.eu\.lever\.co/" + _TOKEN),
@@ -77,9 +88,14 @@ def plain(raw: str | None) -> str:
     return re.sub(r"\s*\n\s*", "\n", text).strip()
 
 
-def _get(url: str) -> bytes:
+def _open(url: str) -> tuple[str, bytes]:
+    """(final URL after redirects, body)."""
     with urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=TIMEOUT) as resp:
-        return resp.read()
+        return resp.geturl(), resp.read()
+
+
+def _get(url: str) -> bytes:
+    return _open(url)[1]
 
 
 def _day(value) -> str:
@@ -99,10 +115,9 @@ def _job(title, url, published, html) -> dict:
     return {"title": (title or "").strip(), "url": url or "", "published": _day(published), "text": plain(html)}
 
 
-def board_from_html(html: str) -> tuple[str, str] | None:
-    """The first ATS board linked from a page's hrefs and srcs (links, iframes, embed scripts)."""
-    for link in re.findall(r"""(?:href|src)\s*=\s*["']([^"']+)""", html, re.I):
-        link = unescape(link)
+def board_from_links(links: list[str]) -> tuple[str, str] | None:
+    """The first ATS board among absolute link and iframe URLs."""
+    for link in links:
         for ats, pattern in ATS_LINKS:
             m = re.match(r"(?:https?:)?//" + pattern, link, re.I)
             if m and m.group(1).split(".")[0].lower() not in NOT_BOARDS:
@@ -110,17 +125,86 @@ def board_from_html(html: str) -> tuple[str, str] | None:
     return None
 
 
-def detect(domain: str) -> tuple[str, str] | None:
-    """(ats, board) from the company's own pages, None if none links an ATS. A page that fails to load is skipped."""
-    for path in ("",) + CAREERS_PATHS:
+def parse_html(url: str, html: str) -> dict:
+    """A plainly read page: its anchors as (absolute URL, text) and every href/src (links, iframes, scripts)."""
+    anchors = [(urljoin(url, unescape(h)), re.sub(r"<[^>]+>", " ", t))
+               for h, t in re.findall(r"""<a\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>""", html, re.I | re.S)]
+    srcs = [urljoin(url, unescape(x)) for x in re.findall(r"""(?:href|src)\s*=\s*["']([^"']+)""", html, re.I)]
+    return {"url": url, "title": "", "text": "", "anchors": anchors, "srcs": srcs}
+
+
+def careers_links(page: dict, sites: set[str]) -> list[str]:
+    """Links to careers pages: on the company's own site or a subdomain, or on a host that itself names
+    careers (acme-karriere.de); never a job portal's page about the company."""
+    out = []
+    for url, text in page["anchors"]:
+        u = urlparse(url.split("#")[0])
+        host = (u.hostname or "").removeprefix("www.")
+        own = any(host == site or host.endswith("." + site) for site in sites)
+        if u.scheme in ("http", "https") and not u.path.lower().endswith(".pdf") \
+                and (own or CAREERS_WORDS.search(host)) and CAREERS_WORDS.search(f"{host}{u.path} {text}"):
+            out.append(u.geturl())
+    return list(dict.fromkeys(out))
+
+
+def _read_plain(urls: list[str]) -> list[dict]:
+    pages = []
+    for url in urls:
         try:
-            html = _get(f"https://{domain}{path}").decode("utf-8", "replace")
-        except Exception:
+            final, body = _open(url)
+        except Exception:  # a page that fails to load is skipped
             continue
-        found = board_from_html(html)
-        if found:
-            return found
-    return None
+        pages.append(parse_html(final, body.decode("utf-8", "replace")))
+    return pages
+
+
+def _read_rendered(urls: list[str], key: str) -> list[dict]:
+    """Pages rendered in a browser by TinyFish fetch (free, at most 10 URLs a call). links holds every
+    <a href>, iframe_links the iframes, including ones a script injected; both come back absolute."""
+    body = {"urls": urls[:10], "format": "markdown", "links": True, "iframe_links": True, "per_url_timeout_ms": 45000}
+    req = Request(TINYFISH_FETCH_URL, data=json.dumps(body).encode(),
+                  headers={"X-API-Key": key, "Content-Type": "application/json"})
+    with urlopen(req, timeout=120) as resp:
+        results = json.loads(resp.read()).get("results") or []
+    return [{"url": r.get("final_url") or r.get("url"), "title": r.get("title") or "", "text": r.get("text") or "",
+             "anchors": [(link, "") for link in r.get("links") or []],
+             "srcs": (r.get("links") or []) + (r.get("iframe_links") or [])} for r in results]
+
+
+def _walk(domain: str, read) -> tuple[tuple[str, str] | None, list[dict]]:
+    """Breadth-first from the homepage over careers links, three levels deep (homepage, careers page,
+    jobs page), at most MAX_PAGES pages: the first ATS board linked, else the careers pages read."""
+    home = f"https://{domain}"
+    sites, seen, careers, level = {domain.removeprefix("www.")}, {home}, [], [home]
+    for depth in range(3):
+        following = []
+        for page in read(level) if level else []:
+            found = board_from_links(page["srcs"])
+            if found:
+                return found, []
+            u = urlparse(page["url"])
+            sites.add((u.hostname or "").removeprefix("www."))  # where a redirect or careers domain lands
+            if depth and CAREERS_WORDS.search(u.netloc + u.path):  # not a soft 404 back to the homepage
+                careers.append(page)
+            for url in careers_links(page, sites):
+                if url not in seen and len(seen) < MAX_PAGES:
+                    seen.add(url); following.append(url)
+        if depth == 0 and not following:
+            following = [home + path for path in CAREERS_PATHS]; seen.update(following)
+        level = following
+    return None, careers
+
+
+def detect(domain: str, tinyfish_key: str | None = None) -> tuple[tuple[str, str] | None, list[dict]]:
+    """((ats, board) or None, careers pages). Read plainly first; rendered with TinyFish only when that
+    finds no ATS and a key is given. The careers pages (rendered markdown, at most 3) come back only
+    when no ATS was found, for the caller to scrape."""
+    found, _ = _walk(domain, _read_plain)
+    if found or not tinyfish_key:
+        return found, []
+    found, careers = _walk(domain, lambda urls: _read_rendered(urls, tinyfish_key))
+    return found, [{"markdown": p["text"], "metadata": {"title": p["title"], "sourceURL": p["url"]}}
+                   for p in careers if p["text"]][:3]
 
 
 def greenhouse(board: str) -> list[dict]:
