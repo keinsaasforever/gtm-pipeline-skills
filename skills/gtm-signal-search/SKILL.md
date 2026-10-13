@@ -183,6 +183,19 @@ and a one-line actionable `overallSummary` back into `signals.csv`. Companies wi
 signal are demoted to ICP-fit (score reflects that) — never force-fit a stale/weak signal as intent.
 Downstream `sanitize.py` drops any signal still lacking a source/date or left `PENDING`.
 
+### Hiring signals: ATS job feeds (`--ats-jobs`)
+
+Add `--ats-jobs` when the client's `signal_criteria.md` includes hiring. A job page rarely prints its
+date, so a crawled one seldom survives the freshness gate. The flag reads the company's public ATS
+feed instead, where every posting has a publish date. The board comes from the ATS link on the
+company's own homepage, `/karriere`, `/jobs` or `/careers`, never from a token guessed off the domain.
+Postings published inside the lookback window (newest 20) join the company's website pages, so the
+same freshness gate, extraction and 5b rubric apply; cite the posting URL.
+
+Supported: Greenhouse, Ashby, Lever (global and EU), Personio, Workable, SmartRecruiters (title and
+date only), Recruitee, Teamtailor (`*.teamtailor.com` hosts). **Free:** public feeds, no key. A
+company whose site links none of them, or whose feed fails, is logged and skipped.
+
 ### Step 6 — Review and log
 
 Open `csv/intermediate/signals.csv`. Inspect actual rows for 2–3 companies:
@@ -202,6 +215,7 @@ Append a run summary to `run_log.md` per `conventions.md` (records processed, hi
 --output-csv PATH               override output (default: csv/intermediate/signals.csv)
 --firecrawl                     enable Firecrawl website crawl via the Firecrawl API (needs FIRECRAWL_API_KEY)
 --firecrawl-pages-dir PATH      read pre-crawled pages from PATH/{domain}.json instead of the API (no key; MCP route)
+--ats-jobs                      add dated postings from the company's public ATS feed as website pages (free; see "Hiring signals")
 --parallel-enrichment           enable Parallel structured enrichment
 --llm-backend {agent,claude-cli,openrouter}   where extraction+scoring happen (default: agent)
 --raw-evidence-dir PATH         where the agent backend writes raw evidence (default: csv/intermediate/signals_raw/)
@@ -286,6 +300,7 @@ If any of these templates need to evolve (e.g. the n8n workflow's scoring rubric
 
 - Parallel web search (`pro` is unused here; we use the default `one-shot` mode): ~1 credit per company
 - Firecrawl crawl (15 pages, markdown only): ~15 credits per company
+- ATS job feeds (`--ats-jobs`): free
 - Parallel enrichment (`processor: core`): ~5 credits per company
 - **`agent` backend (default): no external LLM cost** — the agent scores in-context (counts as normal session tokens). `openrouter` backend (legacy): ~$0.006–0.018 per company.
 

@@ -191,7 +191,7 @@ while IFS= read -r line; do export "$line"; done < <(grep -E '^(PARALLEL_API_KEY
     --client-dir {client-slug}-gtm
 ```
 
-The `resolve_env.sh` source line ensures `$GTM_ENV_PATH` is set even in a fresh shell (see signal-search SKILL.md / conventions). For the demo, leave Firecrawl and Parallel enrichment **OFF** — web search + scoring is enough for a ~10-contact lead list. Enable Firecrawl only if on-site content (careers, blog) is the primary signal source; if this machine has Firecrawl only via MCP (no `FIRECRAWL_API_KEY`), use the `--firecrawl-pages-dir` route documented in the signal-search skill.
+The `resolve_env.sh` source line ensures `$GTM_ENV_PATH` is set even in a fresh shell (see signal-search SKILL.md / conventions). For the demo, leave Firecrawl and Parallel enrichment **OFF** — web search + scoring is enough for a ~10-contact lead list. Enable Firecrawl only if on-site content (careers, blog) is the primary signal source; if this machine has Firecrawl only via MCP (no `FIRECRAWL_API_KEY`), use the `--firecrawl-pages-dir` route documented in the signal-search skill. When the signal criteria include hiring, run it with `--ats-jobs` (free; dated postings from the company's public job board, signal-search "Hiring signals").
 
 ### Merge signals back into contacts
 

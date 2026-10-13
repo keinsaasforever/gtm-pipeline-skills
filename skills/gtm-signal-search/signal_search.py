@@ -12,6 +12,8 @@ Sources (run per company, in parallel where possible):
   1. Parallel web search       — always on
   2. Firecrawl website crawl   — opt-in (--firecrawl)
   3. Parallel enrichment       — opt-in (--parallel-enrichment)
+  3b. ATS job feeds            — opt-in (--ats-jobs): dated postings from the company's public ATS
+                                 board (ats_jobs.py), scored as website pages; free
   4. Signal Assessment LLM     — always on, scores merged signals 1–100
 
 Inputs from the client working directory:
@@ -46,6 +48,8 @@ from typing import Any
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
 
+import ats_jobs
+
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Universal templates — ported verbatim from the n8n workflow.
@@ -57,6 +61,9 @@ PARALLEL_SEARCH_URL = "https://api.parallel.ai/v1beta/search"
 PARALLEL_SEARCH_BETA_HEADER = "search-extract-2025-10-10"
 FIRECRAWL_CRAWL_URL = "https://api.firecrawl.dev/v2/crawl"
 FIRECRAWL_STATUS_URL = "https://api.firecrawl.dev/v2/crawl/{crawl_id}"
+# --ats-jobs: newest postings kept per company, and ad text per posting, so a big board can't flood the evidence.
+ATS_MAX_POSTINGS = 20
+ATS_TEXT_CHARS = 3000
 PARALLEL_TASK_GROUP_URL = "https://api.parallel.ai/v1/tasks/groups"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -559,6 +566,25 @@ def firecrawl_wait_for_completion(crawl_id: str, api_key: str) -> dict[str, Any]
     return None
 
 
+def ats_job_pages(domain: str, lookback_months: int) -> list[dict]:
+    """Postings from the company's public ATS feed (--ats-jobs) published inside the window, as website
+    pages. The posting date goes right before the title, so source_date() reads it as the page's date line
+    and the usual freshness gate keeps the page. A detection or feed failure is logged and skipped."""
+    try:
+        found = ats_jobs.detect(domain)
+        postings = ats_jobs.jobs(*found) if found else []
+    except Exception as e:
+        print(f"  {domain}: ATS jobs skipped ({e})", file=sys.stderr)
+        return []
+    fresh = sorted((j for j in postings if is_fresh(dates_in(j["published"]), lookback_months)),
+                   key=lambda j: j["published"], reverse=True)[:ATS_MAX_POSTINGS]
+    if found:
+        print(f"  {domain}: {found[0]}:{found[1]}, {len(postings)} postings, {len(fresh)} inside the window")
+    return [{"markdown": f"{j['published']} {j['title']}\n\n{j['text'][:ATS_TEXT_CHARS]}",
+             "metadata": {"title": j["title"], "sourceURL": j["url"], "publishedTime": j["published"]}}
+            for j in fresh]
+
+
 # ────────────────────────────────────────────────────────────────────────────────
 # Freshness: the lookback cutoff is enforced on the evidence, before extraction or scoring
 # ────────────────────────────────────────────────────────────────────────────────
@@ -957,6 +983,8 @@ class RunConfig:
     # being crawled via the Firecrawl API. Lets users without a FIRECRAWL_API_KEY supply
     # pages crawled through the Firecrawl MCP (or any other means). No key required.
     firecrawl_pages_dir: Path | None = None
+    # Add dated postings from the company's public ATS feed to its website pages (free).
+    ats_jobs: bool = False
 
 
 def extract_domain(website: str) -> str:
@@ -1017,6 +1045,8 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
             crawl_result = firecrawl_wait_for_completion(crawl_id, cfg.firecrawl_key)
             if crawl_result:
                 pages = crawl_result.get("data", [])
+    if cfg.ats_jobs:
+        pages += ats_job_pages(company_domain, cfg.lookback_months)
     if pages:
         pages = filter_crawl_pages_by_freshness(pages, cfg.lookback_months)
 
@@ -1099,6 +1129,9 @@ def parse_args() -> argparse.Namespace:
                    help="Read pre-crawled Firecrawl pages from {dir}/{domain}.json instead of "
                         "calling the Firecrawl API. Use when you only have Firecrawl via MCP "
                         "(no FIRECRAWL_API_KEY): the agent crawls and writes the page files.")
+    p.add_argument("--ats-jobs", action="store_true",
+                   help="Add dated job postings from the company's public ATS feed (Greenhouse, Ashby, Lever, "
+                        "Personio, Workable, SmartRecruiters, Recruitee, Teamtailor) as website pages. Free.")
     p.add_argument("--parallel-enrichment", action="store_true",
                    help="Enable Parallel structured enrichment (extra cost; useful for funding/hiring data points)")
     p.add_argument("--llm-backend", choices=["agent", "claude-cli", "openrouter"],
@@ -1189,6 +1222,7 @@ def main() -> int:
     print(f"Loaded {len(rows)} companies from {input_csv}")
     print(f"Sources enabled: web_search=ON (max_results={args.max_results}), "
           f"firecrawl={firecrawl_mode}, "
+          f"ats_jobs={'ON' if args.ats_jobs else 'OFF'}, "
           f"parallel_enrichment={'ON' if args.parallel_enrichment else 'OFF'}")
     print(f"LLM backend: {args.llm_backend}")
     if args.llm_backend == "agent":
@@ -1226,6 +1260,7 @@ def main() -> int:
         context=context,
         max_results=args.max_results,
         firecrawl_pages_dir=args.firecrawl_pages_dir,
+        ats_jobs=args.ats_jobs,
         raw_evidence_dir=raw_evidence_dir if args.llm_backend == "agent" else None,
     )
 
