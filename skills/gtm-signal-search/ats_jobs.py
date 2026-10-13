@@ -51,7 +51,7 @@ ATS_LINKS = (
     # An EU board (job-boards.eu.greenhouse.io) reads through the same API (checked live, 2026-10-13).
     ("greenhouse", r"(?:job-boards(?:\.eu)?|boards)\.greenhouse\.io/embed/[^?]*\?(?:[^#]*&)?for=" + _TOKEN),
     ("greenhouse", r"(?:job-boards(?:\.eu)?|boards)\.greenhouse\.io/" + _TOKEN),
-    ("ashby", r"jobs\.ashbyhq\.com/" + _TOKEN),
+    ("ashby", r"jobs\.ashbyhq\.com/([A-Za-z0-9_.-]+)"),  # a board name can carry a dot: /acme.io
     ("lever", r"jobs\.lever\.co/" + _TOKEN),
     ("lever-eu", r"jobs\.eu\.lever\.co/" + _TOKEN),
     ("personio", r"([A-Za-z0-9-]+\.jobs\.personio\.(?:de|com))\b"),

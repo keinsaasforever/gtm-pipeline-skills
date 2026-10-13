@@ -17,6 +17,7 @@ links = {
     '<script src="https://boards.greenhouse.io/embed/job_board/js?for=acme"></script>': ("greenhouse", "acme"),
     '<iframe src="https://job-boards.greenhouse.io/embed/job_board?for=acme&amp;b=x"></iframe>': ("greenhouse", "acme"),
     "<a href='https://jobs.ashbyhq.com/acme'>": ("ashby", "acme"),
+    '<a href="https://jobs.ashbyhq.com/acme.io/123">': ("ashby", "acme.io"),
     '<a href="https://jobs.lever.co/acme/abc-123">': ("lever", "acme"),
     '<a href="https://jobs.eu.lever.co/acme">': ("lever-eu", "acme"),
     '<iframe src="https://acme-gmbh.jobs.personio.de/?display=de"></iframe>': ("personio", "acme-gmbh.jobs.personio.de"),
