@@ -115,4 +115,8 @@ assert kept == ["https://acme.de/news/a", "https://acme.de/news/b", "https://acm
 assert ss._rfc2822_to_iso("Thu, 24 Sep 2026 19:00:00 GMT") == "2026-09-24"
 assert ss._rfc2822_to_iso("") is None
 assert ss._rfc2822_to_iso("not a date") is None
+
+# The window counts calendar days: a date exactly 60 days back is in, whatever the time of day.
+day = lambda n: datetime.combine((datetime.utcnow() - timedelta(days=n)).date(), datetime.min.time())
+assert ss.is_fresh([day(59)], 2) and ss.is_fresh([day(60)], 2) and not ss.is_fresh([day(61)], 2)
 print("ok")

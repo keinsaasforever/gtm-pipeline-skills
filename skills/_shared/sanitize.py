@@ -220,7 +220,7 @@ def _signal_is_valid(sig: dict, cutoff: datetime | None) -> bool:
             continue
     if dt is None:
         return False
-    if cutoff and dt < cutoff:
+    if cutoff and dt.date() < cutoff.date():  # calendar days: a source exactly N days old is still in
         return False
     return True
 

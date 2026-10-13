@@ -1,5 +1,6 @@
-"""End-to-end check of the demo scripts on a two-card fixture: nickname greeting, per-card contact_label,
-and no zero signal count anywhere. python3 test_references.py"""
+"""End-to-end check of the demo scripts on a two-card fixture: nickname greeting, length targets, per-card
+contact_label, the fit box on signal cards, a deck with no address, and no zero signal count anywhere.
+python3 test_references.py"""
 import csv, json, os, subprocess, sys, tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -36,16 +37,25 @@ def write_signals(fresh):
     "footer_headline": "Next?", "footer_body": "Let's talk.", "footer_meta": "Prepared for Acme",
     "cta_label": "Book a time", "signoff": {"en": "Best,\nSam"}}))
 people = [("Joshua", "Lane", "acme-casks.com", "Hi Josh,", "Spirits buyer"), ("Mia", "Stone", "stone-spirits.com", "Hi Mia,", "")]
-with open(tmp / "csv/intermediate/contacts_enriched.csv", "w", newline="") as f:
-    w = csv.DictWriter(f, fieldnames=["company_name", "company_domain", "segment", "full_name", "first_name", "last_name",
-                                      "linkedin_profile_url", "email", "email_status", "country"])
-    w.writeheader()
-    for first, last, dom, _, _ in people:
-        w.writerow({"company_name": dom.split(".")[0].title(), "company_domain": dom, "segment": "a",
-                    "full_name": f"{first} {last}", "first_name": first, "last_name": last,
-                    "linkedin_profile_url": f"https://www.linkedin.com/in/{first.lower()}",
-                    "email": "mia@stone-spirits.com" if first == "Mia" else "",
-                    "email_status": "valid" if first == "Mia" else "", "country": "USA"})
+MIA_P2 = ("We source Scotch casks from independent distilleries for US bottlers, with samples, provenance papers and "
+          "shipping to your warehouse handled.")
+
+
+def write_contacts(mia_has_address=True):
+    with open(tmp / "csv/intermediate/contacts_enriched.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["company_name", "company_domain", "segment", "full_name", "first_name", "last_name",
+                                          "linkedin_profile_url", "email", "email_status", "country"])
+        w.writeheader()
+        for first, last, dom, _, _ in people:
+            kept = first == "Mia" and mia_has_address
+            w.writerow({"company_name": dom.split(".")[0].title(), "company_domain": dom, "segment": "a",
+                        "full_name": f"{first} {last}", "first_name": first, "last_name": last,
+                        "linkedin_profile_url": f"https://www.linkedin.com/in/{first.lower()}",
+                        "email": "mia@stone-spirits.com" if kept else "", "email_status": "valid" if kept else "",
+                        "country": "USA"})
+
+
+write_contacts()
 
 
 def write_messages(greeting_for_joshua):
@@ -55,7 +65,7 @@ def write_messages(greeting_for_joshua):
         "li_p1": f"{greeting_for_joshua if first == 'Joshua' else hi}\nYou bottle single casks under your own label.",
         "li_p2": "We source Scotch casks for US bottlers. Shall I send you three current offers?",
         **({"email_subject": "Casks", "email_p1": "Hi Mia,\nYour own label bottles single casks.",
-            "email_p2": "We source Scotch casks.", "email_p3": "Shall I send three offers?\nBest,\nSam"} if first == "Mia" else
+            "email_p2": MIA_P2, "email_p3": "Shall I send three offers?\nBest,\nSam"} if first == "Mia" else
            {"email_subject": "", "email_p1": "", "email_p2": "", "email_p3": ""})}
         for first, _, _, hi, label in people}
     (tmp / "csv/intermediate/messages.json").write_text(json.dumps(msgs))
@@ -65,6 +75,27 @@ write_messages("Hi Josh,")
 assert "greeting" not in run("check_messages.py")          # a short form of the first name greets
 write_messages("Hi Jo,")
 assert "greeting 'Hi Jo,'" in run("check_messages.py")      # two letters are too short
+write_messages("Hi Josh,")
+assert run("check_messages.py").strip() == "CLEAN"
+
+
+def check_with(**mia):  # Mia's drafts with some fields replaced
+    path = tmp / "csv/intermediate/messages.json"
+    msgs = json.loads(path.read_text())
+    msgs["https://www.linkedin.com/in/mia"].update(mia)
+    path.write_text(json.dumps(msgs))
+    return run("check_messages.py")
+
+
+out = check_with(email_p2=MIA_P2 + " Every cask comes with a sample." * 4, why_they_fit="Bottles single casks. " * 10,
+                 li_p2="We source Scotch casks for US bottlers and know the label rules. Shall I send you three current offers?")
+assert out.startswith("CLEAN"), out                        # over the soft targets: warnings, not errors
+assert "email body 333 > ~300" in out and "why_they_fit 220 > ~200" in out and "LinkedIn 157" not in out, out
+out = check_with(li_p2="We source Scotch casks for US bottlers and know the label rules, the duty and the paperwork. "
+                       "Shall I send you three current offers?")
+assert "LinkedIn 185 > ~180" in out, out
+out = check_with(email_p2=MIA_P2 + " Every cask comes with a sample." * 8)
+assert "ERRORS" in out and "email body 461 > 450" in out, out  # the hard cap still fails
 write_messages("Hi Josh,")
 
 write_signals(fresh=False)
@@ -82,5 +113,12 @@ run("build_output.py")
 run("render_deck.py", "deck.html")
 page = (tmp / "deck.html").read_text()
 assert ">1</div><div class=\"l\">with a fresh buying signal<" in page and "no fresh signal" in page
+assert page.count('<div class="siglabel">Why they fit</div>') == 2   # the signal card keeps its fit box
+assert run("qa_deck.py", "deck.html").startswith("PASS")
+
+write_contacts(mia_has_address=False)                      # no card keeps an address: the deck still builds
+run("build_output.py")
+run("render_deck.py", "deck.html")
+assert 'class="cmail"' not in (tmp / "deck.html").read_text()
 assert run("qa_deck.py", "deck.html").startswith("PASS")
 print("ok")

@@ -134,6 +134,8 @@ These rules apply to every skill in the pipeline:
 11. **Directory/scrape-sourced company lists: search by NAME, validate by domain-root** — never filter enrichment providers by exact domain (a directory `acme.de` won't match a provider-indexed `acme.com` → both BC and FE return 0). Search by company name + location, then confirm each candidate against the target by domain-root or name token (`fe_company_name` cross-check) to guard generic names. See People-Source Cadence.
 12. **Delivery is gated** — writing a message/email to a file is fine; **sending on the user's behalf needs explicit go-ahead** every time.
 13. **Ask when critical input is missing** — if an input essential to a correct result is missing or ambiguous (skill-specific: e.g. ICP/target audience, offering & value prop, provider choice or credit budget, tone/language, a required ID or path), ask the user with the **AskUserQuestion** tool rather than guessing. Low-stakes defaults (poll interval, batch size within limits) don't need a prompt.
+14. **macOS has no `timeout` (nor `gtimeout`)** — never wrap a call in it; the command fails before the call runs. The shared
+    scripts carry their own limits (`requests`/`subprocess` timeouts, poll caps); give a hand-written `curl` call `-m <seconds>`.
 
 ---
 
@@ -500,7 +502,7 @@ Several providers have similarly-named products. Be explicit about which is mean
 |---------|-------|---------|-------|
 | **Kitt find_email** | people-enrichment | **Priority-1 email enrichment** | Live finder: full name + company domain, $0.005 per address found, misses free. Its hits come back verified. Engine: `_shared/kitt.py` |
 | **Kitt verify_email** | people-enrichment | **The verifier gate** | Checks every *other* provider's address before it is kept. `valid` / `valid-risky` / `unknown` / `invalid`; a demo ships `valid` and `valid-risky`. Same engine, `--no-find` |
-| **PhantomBuster Email Finder** | people-enrichment | **Priority-1 email enrichment** | PB's built-in email waterfall (BetterContact et al.) via the "Email Finder" phantom. Input staged from a Google Sheet by `_shared/pb_email_finder.py`. **Runs after Kitt, on its misses; if N/A (no PB key / staging sheet / Google OAuth → exit 3), skip to FullEnrich.** Grades nothing, so every PB address goes through the Kitt gate. |
+| **PhantomBuster Email Finder** | people-enrichment | **Priority-1 email enrichment** | PB's built-in email waterfall (BetterContact et al.) via the "Email Finder" phantom. Input staged from a Google Sheet by `_shared/pb_email_finder.py`. **Runs after Kitt, on its misses; if N/A (no PB key / staging sheet / Google OAuth, or a failed phantom run → exit 3), skip to FullEnrich.** Grades nothing, so every PB address goes through the Kitt gate. |
 | **BetterContact Lead Finder** | people-search | Synchronous people discovery API | Returns contacts by company + role filters |
 | **BetterContact async enrichment** | people-enrichment | Async email/phone enrichment | Slow due to multi-provider waterfall. Email hit rate is low (~14% in our tests) — **prefer FullEnrich for email**. Acceptable for phone if user has patience. |
 | **FullEnrich Company Search** | company-search | Firmographic company discovery (`POST /v2/company/search`) | Default company source. 0.25 cr per company returned. Its `id` joins exactly to the Finder's `current_company_ids`. Script: `_shared/fe_search.py` |

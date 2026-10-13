@@ -257,6 +257,13 @@ for person in people:
 - Hit rate for EU SME audience (via LinkedIn URL filter): ~48% (15/31 companies). Very small/niche companies with few employees often have low FE index coverage — expect 0 results.
 - **Title filter is unreliable** — don't trust the API's title match. Query with **broad single-token titles** and score/filter roles **locally** in the response.
 - **The Finder is NOT free:** 0.25 credits per person returned (FE *Credits & Testing Tips*). A person the workspace already exported costs nothing to fetch again, so overlapping **union queries** (title tokens / full titles / name-only) pay only for the new people. Cap `limit` per query, then **dedupe by LinkedIn URL**. The old "0-credit" note here was wrong for the API; FE's dashboard search is what's free.
+- **Leave known companies out before paying: `current_company_domains` with `exclude: true`** ("If true, excludes
+  results matching this value", FE's people-search reference below). Use it for a client's existing customers, or an
+  association's members. People it removes are never returned, so never billed. A supplier run (2026-10-12) passed
+  559 member domains, plus the .de/.com/.eu/.net variant of each root: one industry value went from 38 rows to 18.
+  Add the TLD variants yourself (the Finder is keyed on one domain per company, see above). The filter matched the root
+  domain in a public-sector run (an include of one agency's subdomain returned every agency under the same root), so
+  don't exclude a subdomain of a shared root.
 - **Drop the per-person `person_locations` filter** — it's often null in the index and silently returns zero results; filter location locally instead.
 
 ### Cost

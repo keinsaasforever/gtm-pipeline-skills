@@ -1,6 +1,7 @@
 """FE v2 work-email enrichment for Kitt's misses: python3 fe_enrich.py <in.csv> <out.csv>, run from {client-slug}-gtm/.
-Only rows with no email AND no email_status (Kitt found nothing) are sent; an optional `email_domain` column
-overrides the mail domain (group.com for brand-tools.com, mail.group.de for group-technik.com).
+Only rows with no email AND no email_status (Kitt found nothing) are sent. An optional `email_domain` column holds
+the company's mail domain(s), space-separated, when they differ from company_domain (group.com for brand-tools.com,
+mail.group.de for group-technik.com): FE searches the first, and an address on any of them or on company_domain is kept.
 Keeps all columns; adds email, email_status, email_source, email_domain_check. Drops wrong-company domains."""
 import csv, json, os, subprocess, sys, time
 sys.path.insert(0, os.path.expanduser("~/.claude/skills/gtm-pipeline/_shared"))
@@ -16,7 +17,7 @@ rows = list(csv.DictReader(open(src)))
 for c in ("email", "email_status", "email_source", "email_domain_check"):
     for r in rows: r.setdefault(c, "")
 todo = [i for i, r in enumerate(rows) if not r["email"] and not r["email_status"]]
-data = [{"first_name": rows[i]["first_name"], "last_name": rows[i]["last_name"], "domain": rows[i].get("email_domain") or rows[i]["company_domain"],
+data = [{"first_name": rows[i]["first_name"], "last_name": rows[i]["last_name"], "domain": (rows[i].get("email_domain") or rows[i]["company_domain"]).split()[0],
          "company_name": rows[i]["company_name"], "linkedin_url": rows[i]["linkedin_profile_url"],
          "enrich_fields": ["contact.work_emails"], "custom": {"row_id": str(i)}} for i in todo]
 print("credits before:", call("GET", "/account/credits").get("balance"), "| sending", len(data))
@@ -38,8 +39,8 @@ for e in results:
     best = (e.get("contact_info") or {}).get("most_probable_work_email") or {}
     email, status = best.get("email") or "", best.get("status") or ""
     if not email or status in ("INVALID", "INVALID_DOMAIN"): continue
-    check = email_domain_matches(email, r.get("email_domain") or r["company_domain"])
-    if check == "mismatch":
+    check = email_domain_matches(email, r["company_domain"], r.get("email_domain", ""))
+    if check in ("mismatch", "other_tld"):  # other_tld is usually another country's company (pb_email_finder)
         dropped += 1; print(f"  DROP mismatch: {r['full_name']} @ {r['company_domain']} -> {email}"); continue
     r.update(email=email, email_status=status, email_source="fullenrich", email_domain_check=check); found += 1
 with open(dst, "w", newline="") as fh:

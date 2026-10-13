@@ -79,7 +79,9 @@ they even sell / why do they want this audience" gap):
    public JSON feed behind the map). Save the list to `csv/input/client_existing.csv` and exclude by
    **domain**, never by name: a name match flagged three unrelated firms whose names merely began like
    three customers' ("Firma Schmidt u. Sohn" for "Firma Schmidt HS", a construction-supplier run,
-   2026-09-18). A parent or sister company of a customer counts as the customer.
+   2026-09-18). A parent or sister company of a customer counts as the customer. On a FullEnrich
+   people search, pass the list as `current_company_domains` with `exclude: true` (people-search →
+   Provider A), so those companies drop before they are billed.
 4. **Companies the prompt names as examples of its customers** ("Kunden wie Firma A, Firma B") are
    treated as existing customers: exclude them and their group, show lookalikes, and record the
    assumption. They are the best description of the segment, not leads.
@@ -276,7 +278,7 @@ Run **people-enrichment** on the filtered contacts. **Demo mode: email only, no 
 1. **Kitt** — every contact (`_shared/kitt.py`, needs `KITT_API_KEY`). Full name + company domain,
    USD 0.005 per address found, misses free. Its own finds come back verified.
 2. **One other provider, for Kitt's misses only** — PhantomBuster Email Finder if available
-   (people-enrichment **Provider 0**; exit 3 = N/A, skip it), else FullEnrich v2. **Stop there.**
+   (people-enrichment **Provider 0**; exit 3 = N/A or a failed phantom run, skip it), else FullEnrich v2. **Stop there.**
    Walking an address through Pipe0 and BC is a pipeline thing; a demo does not buy the fourth try.
 3. **The Kitt gate** — every address from step 2 goes back through `kitt.py`, which keeps `valid`
    and `valid-risky`. Risky is Kitt's catch-all verdict: the server accepts every address, so the
@@ -319,6 +321,13 @@ python3 ~/.claude/skills/gtm-pipeline/_shared/kitt.py --no-find \
 
 Every kept email must also pass the **domain-identity cross-check** (the engine drops wrong-company
 hits automatically). On a ~10-contact demo, PB is a single async batch (~3–6 min).
+**A company can mail from another domain than its website.** When its own evidence ties a second
+domain to it (the imprint's or contact page's address, or a domain that redirects to the website),
+write that domain into the optional `email_domain` column before the second provider runs
+(space-separated when there are several); `pb_email_finder.py` and `references/fe_enrich.py` then
+keep an address on it. A similar name is not evidence. A supplier run, 2026-10-12: the site sat on
+one domain, the imprint gave info@ on another that redirected to the site, and the check dropped
+the right person's address on it.
 
 Additional enrichment for message personalization (if available):
 - LinkedIn headline and summary (from LinkedIn scrape via PhantomBuster)
@@ -447,7 +456,16 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 | Offer | What you provide, clearly stated | 1 sentence |
 | CTA | A yes/no question that offers something free for a one-word reply. Never a call | 1 sentence |
 
-**Total: 320–450 characters.** No blank line after greeting. Paragraphs separated by single line break.
+**Short and conversational** (Paul, 2026-10-13). Write like a person who looked them up, not like an AI pitch: concise
+and to the point, keeping what it takes to show why this contact is relevant and what we learned about them.
+- **Email:** about 250–300 characters between greeting and sign-off.
+- **LinkedIn:** at most about 180 characters, greeting included.
+- **"Why they fit"** (the fit box on every deck card): at most about 200 characters, one or two plain sentences.
+- No warm-up line ("I came across your profile"), no generic sector statement ("the industry is under pressure"),
+  no stacked benefits: one benefit, the one that fits this person.
+
+`check_messages.py` warns above these targets and fails only past the hard caps (email body 450, LinkedIn 400).
+No blank line after greeting. Paragraphs separated by single line break.
 
 ### Quality Rules
 
@@ -512,7 +530,7 @@ deck-side fix then had to strip out.
 - Forbidden rules: no profile repetition, no generic flattery
 - Message structure: hook → bridge → offer → CTA
 - Hook examples: with posts / without posts
-- Character limit: 320–450
+- Length: email ~250–300 characters, LinkedIn ≤ ~180, "why they fit" ≤ ~200; no warm-up, no sector statement, one benefit
 ```
 
 ---
@@ -551,7 +569,8 @@ result to `csv/output/`.
    `context/` files. Assemble with the **sonnet** model. Deck anatomy (all baked into the template):
    - **Header + hero + 4 stat tiles** (3 when no card has a signal), then segment blocks. Group contacts into **Signal-first**
      (fresh, sourced buying signal ≤ 60d → `sig-hot` red signal box with a live `.sigsrc` source
-     link + date) and **ICP-first** (strong fit, no live signal → `sig-fit` blue "why they fit"
+     link + date, above the card's `sig-fit` "why they fit" box: the signal says why now, the fit
+     says why them) and **ICP-first** (strong fit, no live signal → `sig-fit` blue "why they fit"
      box, no source link, built only from timeless fit facts: Step 6 → Hook sources). Use
      `.approach` blocks to frame each group; `.seg-meta` for counts.
    - Each card = collapsible `<details class="lead">`: favicon, company + domain, attribute tags
@@ -572,6 +591,8 @@ result to `csv/output/`.
    - **`{{CSV_DATA}}`**: embed the sanitized `csv/output/` rows as an escaped JS string (`\r\n`
      line endings; quote any field containing a comma) so the Download button emits a real CSV
      offline — no server. Set `{{CSV_FILENAME}}` to `{client-slug}_prospects.csv`.
+   - **Deck copy is short and conversational** (Step 6): segment intros, approach texts, method note
+     and footer are one or two plain sentences each, with no warm-up and no generic sector statement.
    - **Hero = hook, not manual.** `{{HERO_HEADLINE}}` short (≤ ~7 words), outcome-first, no jargon;
      `{{HERO_INTRO}}` 1–2 short sentences on what they *get* (ready-to-send outreach to the right
      people), never how the pipeline works. Intrigue, don't overwhelm with technical detail.
@@ -593,7 +614,8 @@ result to `csv/output/`.
 **Step 7c — Programmatic self-QA** (browser QA is often unavailable — never depend on a screenshot):
 `references/qa_deck.py <out.html>` runs every check below and exits 1 on a failure.
 assert card count == contact count; **zero unfilled `{{TOKEN}}` placeholders remain** in the HTML;
-every signal card has a live source link + date; **zero empty fields / placeholders**; zero
+every signal card has a live source link + date; every card, signal cards too, has a non-empty
+"why they fit" box; **zero empty fields / placeholders**; zero
 em-dashes; one email + one LinkedIn draft per verified-email card (LinkedIn-only for `est-warn`
 cards) within char caps. **Every address in the deck carries an `est-ok` badge and an
 `email_status` of `valid` or `valid-risky` in the CSV it was built from** — an address with any other verdict, or a
@@ -628,7 +650,8 @@ Messages saved separately to `csv/output/messages.csv`. **Delivery is gated** �
 email to a file; never send on the user's behalf without explicit go-ahead (`conventions.md` #12).
 **The cover email never states a zero signal count** or that no signal was found (Paul, 2026-10-09):
 with no signal card it talks about the fit and the drafts. `run_log.md` and `result.json` may still
-give the count; they are internal.
+give the count; they are internal. **The cover message has one goal, the click** (Paul, 2026-10-13):
+the link, the login, one teaser line and the CTA. No rundown of the contents; the deck does that.
 
 ---
 
@@ -637,7 +660,7 @@ give the count; they are internal.
 - [ ] Messages feel personal, not templated
 - [ ] No profile info repetition
 - [ ] Clear value proposition in every message
-- [ ] Proper formatting (line breaks, character count 320–450)
+- [ ] Proper formatting (line breaks, email ~250–300 characters, LinkedIn ≤ ~180, fit ≤ ~200)
 - [ ] Hook differs between contacts (no copy-paste structure)
 - [ ] All data fields populated correctly
 - [ ] Client-specific context incorporated

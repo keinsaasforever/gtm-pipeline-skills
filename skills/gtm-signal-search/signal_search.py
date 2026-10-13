@@ -788,8 +788,8 @@ def source_date(text: str, headline: str = "") -> datetime | None:
 
 
 def is_fresh(dates: list[datetime], lookback_months: int) -> bool:
-    now = datetime.utcnow()
-    return any(now - timedelta(days=lookback_months * 30) <= d <= now for d in dates)
+    today = datetime.utcnow().date()  # calendar days: a date exactly at the cutoff is still in
+    return any(today - timedelta(days=lookback_months * 30) <= d.date() <= today for d in dates)
 
 
 def filter_search_results_by_freshness(results: list[dict], lookback_months: int) -> tuple[list[dict], dict]:

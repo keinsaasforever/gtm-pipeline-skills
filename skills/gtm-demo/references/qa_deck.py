@@ -18,7 +18,8 @@ check(len(cards) == len(data), f"cards {len(cards)} != deck_data rows {len(data)
 check(not re.findall(r"\{\{[A-Z0-9_]+\}\}", page), "unfilled {{TOKEN}} placeholders")
 visible = html.unescape(re.sub(r"<script.*?</script>|<style.*?</style>|<[^>]+>", " ", page, flags=re.S))
 check(not re.search("[–—]", visible), "en/em dash in visible text")
-zero = re.search(r"\b(?:0|zero|null)\b[^.!?\d]{0,40}signal", visible, re.I)
+# within one line: a segment's "· 0 with email" must not read on into the next card's "Signal" tag
+zero = re.search(r"\b(?:0|zero|null)\b[^.!?\d\n]{0,40}signal", visible, re.I)
 check(not zero, f"zero signal count shown: {zero and zero.group()!r}")
 vendor = re.search(r"\b(kitt|trykitt|fullenrich|bettercontact|phantombuster|pipe0|parallel\.ai|firecrawl|apollo|crustdata|amplemarket|clay)\b", visible, re.I)
 check(not vendor, f"provider name visible: {vendor and vendor.group()}")
@@ -28,6 +29,8 @@ for c in cards:
     d = by_dom[re.search(r'class="lead-domain" href="https://([^"]+)"', c).group(1)]
     name, sig = d["company_name"], "sig-hot" in c
     check(sig == (d["group"] == "signal"), f"{name}: signal box vs data")
+    check(re.search(r'class="signal sig-fit"><div class="siglabel">[^<]+</div><div class="sigtext">\s*\S', c),
+          f"{name}: no why-they-fit text")  # signal cards too: the signal says why now, the fit says why them
     if sig:
         src = re.search(r'class="sigsrc" href="(https?://[^"]+)"[^>]*>(.*?)</a>', c, re.S)
         check(src and re.search(r"20\d\d", src.group(2)), f"{name}: signal without live link + date")

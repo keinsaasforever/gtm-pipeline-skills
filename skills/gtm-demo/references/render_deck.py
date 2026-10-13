@@ -39,11 +39,11 @@ def fmt_date(d):
 def card(r):
     sig = r["group"] == "signal"
     tag = f'<span class="tag tag-sig">{L["tag_sig"]}</span>' if sig else f'<span class="tag tag-icp">{L["icp"]}</span>'
+    # every card says why the contact fits; a signal card shows its signal above that
+    box = f'<div class="signal sig-fit"><div class="siglabel">{L["fit"]}</div><div class="sigtext">{e(r["why_they_fit"])}</div></div>'
     if sig:
         box = (f'<div class="signal sig-hot"><div class="siglabel">{L["signal"]}</div><div class="sigtext">{e(r["signal_text"])}</div>'
-               f'<a class="sigsrc" href="{e(r["signal_source_url"])}" target="_blank" rel="noopener">&#8599; {e(r["signal_source_label"])} · {fmt_date(r["signal_date"])}</a></div>')
-    else:
-        box = f'<div class="signal sig-fit"><div class="siglabel">{L["fit"]}</div><div class="sigtext">{e(r["why_they_fit"])}</div></div>'
+               f'<a class="sigsrc" href="{e(r["signal_source_url"])}" target="_blank" rel="noopener">&#8599; {e(r["signal_source_label"])} · {fmt_date(r["signal_date"])}</a></div>') + box
     if r["email"]:
         cls, label = BADGE[r["email_status"]]  # KeyError = a build bug: an unchecked address reached the deck
         mail = f'<span class="cmail">{e(r["email"])}</span> <span class="est {cls}">{label}</span>'

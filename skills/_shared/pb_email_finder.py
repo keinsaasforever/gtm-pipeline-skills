@@ -29,6 +29,10 @@ the next provider" — when ANY prerequisite is missing:
   - PHANTOMBUSTER_API_KEY not set
   - gspread not importable / Google OAuth creds not found (GOOGLE_CLIENT_SECRET_FILE)
   - the fresh spreadsheet cannot be created
+It also exits 3 when the phantom ran and FAILED: a non-zero container exit code, a run that did
+not finish, or an `[error]` line in its log. On 2026-10-12 a run logged "You have no remaining
+emails" and "Storage full", found 0 of 11, and this engine still exited 0 with "0 emails returned",
+which reads as "PB looked and found nothing" and stops a demo's one-other-provider email step.
 The caller (people-enrichment / demo) treats exit 3 as "skip, run FullEnrich next".
 Exit 0 = ran (emails may or may not have been found). Exit 1 = hard error.
 
@@ -114,7 +118,7 @@ def _extract_sld(domain):
     return parts[-2]
 
 
-def email_domain_matches(email, company_domain):
+def email_domain_matches(email, company_domain, mail_domains=""):
     """Return match | subdomain | other_tld | mismatch | "".
 
     `other_tld` = same brand label, different TLD (brand.fr vs brand.no). That is usually a
@@ -122,13 +126,22 @@ def email_domain_matches(email, company_domain):
     first.last@brand.fr for a contact at brand.no), occasionally a real parent domain
     (group.com for groupproperties.se). It is never safe to auto-keep: callers drop it like a
     mismatch unless a human confirms the domain belongs to the target.
+
+    `mail_domains` (the optional `email_domain` column, space-separated) are the company's other
+    mail domains, each one tied to it by its own evidence: the imprint's address, or a domain that
+    redirects to the website. The best verdict over the website domain and these wins. A supplier
+    run (2026-10-12) lost a correct address because its site and its mail sat on different domains.
     """
     if not email or "@" not in email:
         return ""
     e = email.split("@", 1)[1].strip().lower()
-    c = clean_domain(company_domain)
-    if not e or not c:
+    verdicts = [_domain_verdict(e, c) for c in map(clean_domain, [company_domain, *(mail_domains or "").split()]) if c]
+    if not e or not verdicts:
         return ""
+    return next(v for v in ("match", "subdomain", "other_tld", "mismatch") if v in verdicts)
+
+
+def _domain_verdict(e, c):
     if e == c:
         return "match"
     if e.endswith("." + c):
@@ -225,18 +238,29 @@ def launch_email_finder(spreadsheet_url, csv_name, line_count, agent_id, api_key
 
 
 def wait_for_container(container_id, api_key):
+    """The container as `containers/fetch` last returned it (`status`, `exitCode`, `endType`)."""
     print(f"    container {container_id} — waiting {PB_INITIAL_WAIT}s before polling...")
     time.sleep(PB_INITIAL_WAIT)
     elapsed = 0
-    status = None
+    resp = {}
     while elapsed < PB_POLL_TIMEOUT:
         resp = pb_api("GET", f"containers/fetch?id={container_id}", None, api_key)
-        status = resp.get("status")
-        if status and status != "running":
-            return status
+        if resp.get("status") and resp["status"] not in ("starting", "running"):
+            return resp
         time.sleep(PB_POLL_INTERVAL)
         elapsed += PB_POLL_INTERVAL
-    return status
+    return resp
+
+
+def phantom_failure(container, log):
+    """Why the phantom run failed, or "" if it finished cleanly. A quota hit still ends with
+    status `finished` and an empty result, so the exit code and the log's `[error]` lines are what
+    tell it apart from a run that simply found nothing."""
+    errors = [line.split("]", 1)[1].strip(" ❌") for line in log.splitlines() if line.startswith("[error]")]
+    status, code = container.get("status"), container.get("exitCode")
+    if errors or status != "finished" or code not in (0, None):
+        return "; ".join(errors) or f"status={status} exitCode={code} endType={container.get('endType')}"
+    return ""
 
 
 def _walk_for_emails(obj, hits):
@@ -258,7 +282,7 @@ def _walk_for_emails(obj, hits):
             _walk_for_emails(item, hits)
 
 
-def fetch_email_results(container_id, agent_id, api_key):
+def fetch_email_results(container_id, log, api_key):
     hits = []
     resp = pb_api("GET", f"containers/fetch-result-object?id={container_id}", None, api_key)
     raw = resp.get("resultObject")
@@ -271,8 +295,6 @@ def fetch_email_results(container_id, agent_id, api_key):
     if hits:
         return hits
     # Fallback: scrape the console log for emails (loses name/domain mapping).
-    log = pb_api("GET", f"agents/fetch-output?id={agent_id}&containerId={container_id}",
-                 None, api_key).get("output", "")
     if log:
         pat = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
         for line in log.splitlines():
@@ -385,15 +407,26 @@ def main():
             if not container_id:
                 print(f"    WARN: launch failed for batch {bi}; skipping batch")
                 continue
-            status = wait_for_container(container_id, api_key)
-            if status not in ("finished", "success"):
-                print(f"    WARN: batch {bi} ended status={status}; fetching anyway")
-            hits = fetch_email_results(container_id, args.agent_id, api_key)
-            print(f"    [{bi}/{len(batches)}] {len(hits)} emails returned")
+            container = wait_for_container(container_id, api_key)
+            log = pb_api("GET", f"agents/fetch-output?id={args.agent_id}&containerId={container_id}",
+                         None, api_key).get("output", "") or ""
+            failed = phantom_failure(container, log)
+            if not failed:
+                hits = fetch_email_results(container_id, log, api_key)
+                print(f"    [{bi}/{len(batches)}] {len(hits)} emails returned")
         except Exception as e:
             print(f"    WARN: batch {bi} failed ({e}); continuing")
             run_ok = False
             continue
+        if failed:  # quota, storage or a crash: every later batch would fail the same way
+            print(f"N/A: the phantom run failed ({failed}); skipping PB email finder", file=sys.stderr)
+            if fresh and not args.keep_staging:
+                try:
+                    gc.del_spreadsheet(sh.id)  # nothing to inspect in it: the log says why
+                except Exception as e:
+                    print(f"WARN: could not trash staging sheet ({e}); delete manually: "
+                          f"https://docs.google.com/spreadsheets/d/{sh.id}")
+            return 3
         for h in hits:
             k = (h["firstName"].lower(), h["lastName"].lower(), clean_domain(h["domain"]))
             result_map[k] = h["email"]
@@ -410,7 +443,7 @@ def main():
         email = result_map.get((first, last, dom)) or name_map.get((first, last))
         if not email:
             continue
-        flag = email_domain_matches(email, r.get(cols["domain"], ""))
+        flag = email_domain_matches(email, r.get(cols["domain"], ""), r.get("email_domain", ""))
         if flag in ("mismatch", "other_tld") and not args.keep_mismatch:
             mismatch += 1
             continue  # wrong company (or another country's entity); next provider may do better

@@ -7,7 +7,7 @@ generalized; two earlier runs each hand-wrote the same five scripts. `python3 te
 | Step | Script | Reads | Writes |
 |---|---|---|---|
 | 3 | `bc_search.py <name> <body.json>` | a BetterContact Lead Finder body | `csv/intermediate/raw/bc_<name>.json` |
-| 5 | `fe_enrich.py <in.csv> <out.csv>` | rows Kitt found nothing for (optional `email_domain`) | same rows + FE address |
+| 5 | `fe_enrich.py <in.csv> <out.csv>` | rows Kitt found nothing for (optional `email_domain`: the company's mail domain(s), space-separated) | same rows + FE address |
 | 6 | `check_messages.py` | contacts + `messages.json` + `deck.json` | CLEAN / problems |
 | 7a | `build_output.py` | contacts + `signals.csv` + `messages.json` + `deck.json` | `csv/output/*.csv`, `deck_data.json`, `sanitize_report.json` |
 | 7b | `render_deck.py <out.html>` | `deck_data.json` + `deck.json` + `../deck_template.html` | the deck |
@@ -17,7 +17,9 @@ generalized; two earlier runs each hand-wrote the same five scripts. `python3 te
 
 **`csv/intermediate/contacts_enriched.csv`** — one row per card, after the Kitt gate (Step 5). Required:
 `company_name, company_domain, segment, full_name, first_name, last_name, linkedin_profile_url, email,
-email_status, country`. `segment` is a key from `deck.json`; `country` is display text in the deck's
+email_status, country`. Optional `email_domain`: the company's mail domain(s) when its own evidence ties them to it
+(imprint address, a domain that redirects to the website); the domain check accepts them (SKILL.md Step 5).
+`segment` is a key from `deck.json`; `country` is display text in the deck's
 language ("Deutschland"). An address ships only with `email_status` `valid` or `valid-risky`.
 
 **`csv/intermediate/signals.csv`** — signal-search output after scoring: `company_domain`, `scoredSignals`
@@ -32,7 +34,9 @@ language ("Deutschland"). An address ships only with `email_status` `valid` or `
   "email_subject": "…", "email_p1": "Guten Tag Herr X,\nhook", "email_p2": "bridge + offer",
   "email_p3": "CTA\nViele Grüße\nName", "li_p1": "Guten Tag Herr X,\nhook", "li_p2": "offer + CTA"}}
 ```
-No kept address → the four `email_*` fields are empty. `contact_label` (optional) is the card's label for the
+No kept address → the four `email_*` fields are empty. Length targets (SKILL.md Step 6): `why_they_fit` ≤ ~200
+characters, email body ~250–300, LinkedIn ≤ ~180; `check_messages.py` warns above them and fails past 450 / 400.
+Every card shows `why_they_fit`, a signal card below its signal. `contact_label` (optional) is the card's label for the
 person, what the evidence supports ("Spirits buyer", "Partner"); empty → "Entscheider" / "Decision-maker". When any
 card carries one, the first stat tile counts "Ansprechpartner" / "named contacts" instead of decision-makers.
 Both CTA variants are yes/no questions offering something free (`A` and `B` offer different things); none asks for a call (SKILL.md Step 6).

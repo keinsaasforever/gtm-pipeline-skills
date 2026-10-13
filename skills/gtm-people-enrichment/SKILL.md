@@ -58,6 +58,10 @@ Deliverability status is **blind to identity.** Providers return `DELIVERABLE` e
 - The email's domain must **belong to the target company** — match by **domain-root** against the target's known domain / company name.
 - If the domain is unfamiliar, **verify what it actually is** (e.g. scrape its title) before trusting it.
 - **Drop identity mismatches** even when status is `DELIVERABLE`.
+- **A company's mail domain can differ from its website.** When the company's own evidence ties another domain to it
+  (the imprint's or contact page's address, or a domain that redirects to the website), put it in the optional
+  `email_domain` column (space-separated for several). `pb_email_finder.py` and gtm-demo's `fe_enrich.py` then keep an
+  address on it as a `match`; without it the right person's address is dropped as a mismatch (a supplier run, 2026-10-12).
 
 This is the real anti-"made-up-address" guard; the `sanitize.py` deliverability filter (below) is only the last net.
 
@@ -213,6 +217,9 @@ The **first** email provider in the waterfall when it's available. Uses the Phan
 - Agent ID resolved via `PB_AGENT_EMAIL` (env / `_shared/local.md`), or by phantom name "Email Finder" through the PB API/MCP. See `_shared/phantombuster.md`.
 
 **If any prerequisite is missing the engine exits `3` — a clean "not available" signal. Treat exit 3 as "skip PB, start the waterfall at FullEnrich."** Do not treat it as an error.
+**A phantom run that failed also exits 3**: a non-zero exit code, a run that did not finish, or an `[error]` line in its
+log ("You have no remaining emails", "Storage full", 2026-10-12). Until then such a run exited 0 with "0 emails
+returned", which looks like PB found nothing and ends a demo's email step one provider early.
 
 ### Run
 ```bash

@@ -1,6 +1,7 @@
 """Wrong-person + keep-the-contact checks (a demo, 2026-09-23). python3 test_sanitize.py"""
 import os
 import sys
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sanitize import _signal_is_valid, email_owner_score, sanitize_rows, wrong_person_emails
@@ -53,9 +54,17 @@ clean, report = sanitize_rows(rows, require_email=True)         # the old behavi
 assert [r["full_name"] for r in clean] == ["Eva Echt", "Tom Riskant"], clean
 assert report["rows_dropped_bad_email"] == 2, report
 
-print("ok")
-
 # a job change cites the person's own profile; for any other signal type a profile is not a source
 job_change = {"type": "job_change", "source_url": "https://www.linkedin.com/in/jane-doe", "date": "2026-09-01"}
 assert _signal_is_valid(job_change, None)
 assert not _signal_is_valid({**job_change, "type": "funding"}, None)
+
+# The 60-day window counts calendar days, whatever the time of day the run starts (a supplier run, 2026-10-12).
+today = datetime(2026, 10, 12, 18, 30)
+for age, kept in ((59, 1), (60, 1), (61, 0)):
+    sig = {"source_url": "https://acme.de/news/new-plant", "date": (today - timedelta(days=age)).strftime("%Y-%m-%d")}
+    clean, _ = sanitize_rows([{"full_name": "Eva Echt", "scored_signals": [sig]}], require_email=False,
+                             drop_empty=False, max_signal_age_days=60, today=today)
+    assert len(clean[0]["scored_signals"]) == kept, (age, clean)
+
+print("ok")
