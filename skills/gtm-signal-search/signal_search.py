@@ -559,34 +559,130 @@ def firecrawl_wait_for_completion(crawl_id: str, api_key: str) -> dict[str, Any]
     return None
 
 
+# ────────────────────────────────────────────────────────────────────────────────
+# Freshness: the lookback cutoff is enforced on the evidence, before extraction or scoring
+# ────────────────────────────────────────────────────────────────────────────────
+#
+# Parallel's `after_date` only filters pages that carry a date. On a construction-supplier run
+# (2026-09-18) 143 of 175 results had none, and every stale event that reached a message hook
+# came in through them. Both real signals of that run were undated too, but their text carried a
+# date, so reading dates out of the text keeps them while the stale and undated pages go.
+
+_MONTHS = {
+    **{m: i for i, m in enumerate(("januar", "februar", "märz", "april", "mai", "juni", "juli", "august",
+                                   "september", "oktober", "november", "dezember"), 1)},
+    **{m: i for i, m in enumerate(("january", "february", "march", "april", "may", "june", "july", "august",
+                                   "september", "october", "november", "december"), 1)},
+    "jan": 1, "feb": 2, "mar": 3, "mär": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "sept": 9,
+    "oct": 10, "okt": 10, "nov": 11, "dec": 12, "dez": 12,
+}
+_MON = "|".join(sorted(_MONTHS, key=len, reverse=True))
+_DATE_PATTERNS = (  # (pattern, groups -> (year, month, day))
+    (re.compile(r"\b(20\d\d)-(\d\d)-(\d\d)"), lambda g: (g[0], g[1], g[2])),                       # 2026-07-29
+    (re.compile(r"\b(\d{1,2})\.(\d{1,2})\.(20\d\d)(?!\d)"), lambda g: (g[2], g[1], g[0])),              # 29.07.2026
+    (re.compile(r"\b(\d{1,2})/(\d{1,2})/(20\d\d)(?!\d)"), lambda g: _slash_date(*map(int, g))),          # 01/09/2025, 09/24/2026
+    (re.compile(rf"\b(\d{{1,2}})\.?\s+({_MON})\.?\s+(20\d\d)(?!\d)", re.I),
+     lambda g: (g[2], _MONTHS[g[1].lower()], g[0])),                                                 # 29. Juli 2026
+    (re.compile(rf"\b({_MON})\.?\s+(\d{{1,2}}),?\s+(20\d\d)(?!\d)", re.I),
+     lambda g: (g[2], _MONTHS[g[0].lower()], g[1])),                                                 # July 29, 2026
+)
+
+
+def _slash_date(a: int, b: int, y: int) -> tuple[int, int, int]:
+    """dd/mm/yyyy or mm/dd/yyyy. When both readings are real dates, the later one that is not in
+    the future: a machine maker's en_US press page prints 09/02/2026 for 2 September (a machinery
+    run, 2026-09-24), and reading it as 9 February dropped a real signal. Leaning fresh only keeps an
+    item for the scorer to read; it never drops one."""
+    readings = []
+    for day, month in ((a, b), (b, a)):
+        try:
+            readings.append(datetime(y, month, day))
+        except ValueError:
+            pass
+    now = datetime.utcnow()
+    best = max([r for r in readings if r <= now] or readings)  # no valid reading: ValueError, skipped by the caller
+    return best.year, best.month, best.day
+
+
+def dated_spans(text: str) -> list[tuple[int, datetime]]:
+    """Every full date (day, month and year) written in the text, with its position, in text order."""
+    found: list[tuple[int, datetime]] = []
+    for pattern, ymd in _DATE_PATTERNS:
+        for match in pattern.finditer(text or ""):
+            try:
+                y, m, d = ymd(match.groups())
+                found.append((match.start(), datetime(int(y), int(m), int(d))))
+            except (ValueError, KeyError):
+                pass
+    return sorted(found, key=lambda span: span[0])
+
+
+def dates_in(text: str) -> list[datetime]:
+    return [d for _, d in dated_spans(text)]
+
+
+def source_date(text: str, headline: str = "") -> datetime | None:
+    """The date the source prints for its own item, not the page's technical stamp.
+
+    A provider's publish_date / publishedTime is often the crawl or rebuild date: a company's
+    appointment news (dated 01/09/2025 on the page) came back as 2026-09-22 on a machinery run
+    (2026-09-24), and another maker's item from 2022 as 2026-09-06, because its sidebar
+    lists this week's news above the article. So: a date line right before the headline
+    ("28.07.2026 00:00 PRO LINE"), else the first full date after the headline's first
+    appearance in the text, else the nearest one before it; without the headline in the text,
+    the latest date. Future dates (deadlines, plans) never count. None = the text has no date."""
+    now = datetime.utcnow()
+    spans = [(pos, d) for pos, d in dated_spans(text) if d <= now]
+    if not spans:
+        return None
+    head = re.split(r"\s+[|–—-]\s+", headline or "")[0].strip()[:40]  # drop " | ACME", " - Trade Journal"
+    at = (text or "").lower().find(head.lower()) if len(head) >= 12 else -1
+    if at < 0:
+        return max(d for _, d in spans)
+    date_line = [d for pos, d in spans if 0 <= at - pos <= 40]
+    if date_line:
+        return date_line[-1]
+    after = [d for pos, d in spans if pos > at]
+    return after[0] if after else spans[-1][1]  # no date after the headline: the nearest one before it
+
+
+def is_fresh(dates: list[datetime], lookback_months: int) -> bool:
+    today = datetime.utcnow().date()  # calendar days: a date exactly at the cutoff is still in
+    return any(today - timedelta(days=lookback_months * 30) <= d.date() <= today for d in dates)
+
+
+def filter_search_results_by_freshness(results: list[dict], lookback_months: int) -> tuple[list[dict], dict]:
+    """Keep a web-search result only if its date is inside the window: the date the source
+    itself prints (`source_date` over the excerpts, then the title), else the provider's
+    publish_date. Undated and stale results are dropped. A fresh article can still re-report an
+    older event; that call is the scorer's (the event date counts, SKILL.md rubric)."""
+    kept: list[dict] = []
+    dropped = {"stale": 0, "undated": 0}
+    for r in results:
+        own = source_date(" ".join(r.get("excerpts") or []), r.get("title") or "") or source_date(r.get("title") or "")
+        pub = r.get("publish_date")
+        dates = [own] if own else dates_in(str(pub)) if pub else []
+        if is_fresh(dates, lookback_months):
+            kept.append(r)
+        else:
+            dropped["stale" if dates else "undated"] += 1
+    return kept, dropped
+
+
 def filter_crawl_pages_by_freshness(pages: list[dict], lookback_months: int) -> list[dict]:
-    """Drop pages older than the lookback window. Mirrors the n8n `Filter out old` node."""
-    cutoff = datetime.utcnow() - timedelta(days=lookback_months * 30)
-    iso_re = re.compile(r"(\d{4}-\d{2}-\d{2})")
-    fresh: list[dict] = []
+    """Same rule for crawled pages: the date the page prints for itself, else its publication
+    metadata. Until 2026-09-21 this kept stale and undated pages ("let the LLM filter"), so the
+    second freshness gate filtered nothing. `last_modified` is not a publication date: a site
+    rebuild stamps every old page with it."""
+    kept: list[dict] = []
     for p in pages:
         meta = p.get("metadata") or {}
-        date_str = (
-            meta.get("article:published_time")
-            or meta.get("published_time")
-            or meta.get("date")
-            or meta.get("last_modified")
-            or meta.get("publishedTime")
-        )
-        match = iso_re.search(str(date_str or ""))
-        if not match and p.get("markdown"):
-            match = iso_re.search(p["markdown"])
-        if match:
-            try:
-                d = datetime.strptime(match.group(1), "%Y-%m-%d")
-                if cutoff <= d <= datetime.utcnow():
-                    fresh.append(p)
-                    continue
-            except ValueError:
-                pass
-        # No parseable date — keep, let the LLM filter on content
-        fresh.append(p)
-    return fresh
+        own = source_date(p.get("markdown") or "", meta.get("title") or meta.get("og:title") or "")
+        stamp = meta.get("article:published_time") or meta.get("published_time") or meta.get("publishedTime") or meta.get("date")
+        dates = [own] if own else dates_in(str(stamp)) if stamp else []
+        if is_fresh(dates, lookback_months):
+            kept.append(p)
+    return kept
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -898,6 +994,7 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
         cfg.lookback_months, cfg.parallel_key, cfg.max_results,
     )
     raw_results = search_resp.get("results", []) if isinstance(search_resp, dict) else []
+    raw_results, dropped_by_cutoff = filter_search_results_by_freshness(raw_results, cfg.lookback_months)
 
     # Firecrawl website pages (optional). Two routes:
     #  (a) firecrawl_pages_dir set -> read pre-crawled pages from {dir}/{domain}.json
@@ -948,6 +1045,7 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
                         "website": website,
                         "lookback_months": cfg.lookback_months,
                         "web_search_results": raw_results,
+                        "web_search_dropped_by_cutoff": dropped_by_cutoff,
                         "website_pages": pages,
                         "parallel_enrichment": enrichment,
                     }, ensure_ascii=False, indent=2),
