@@ -231,7 +231,15 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 | Offer | What you provide, clearly stated | 1 sentence |
 | CTA | Soft ask — not "let's schedule a call" | 1 sentence |
 
-**Total: 320–450 characters.** No blank line after greeting. Paragraphs separated by single line break.
+**Short and conversational.** Write like a person who looked them up, not like an AI pitch: concise and to the
+point, keeping what it takes to show why this contact is relevant and what you learned about them.
+- **Email:** about 250–300 characters between greeting and sign-off.
+- **LinkedIn:** at most about 180 characters, greeting included.
+- **"Why they fit"** (the fit box on every deck card): at most about 200 characters, one or two plain sentences.
+- No warm-up line ("I came across your profile"), no generic sector statement ("the industry is under pressure"),
+  no stacked benefits: one benefit, the one that fits this person.
+
+No blank line after greeting. Paragraphs separated by single line break.
 
 ### Quality Rules
 
@@ -264,7 +272,7 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 - Forbidden rules: no profile repetition, no generic flattery
 - Message structure: hook → bridge → offer → CTA
 - Hook examples: with posts / without posts
-- Character limit: 320–450
+- Length: email ~250–300 characters, LinkedIn ≤ ~180, "why they fit" ≤ ~200; no warm-up, no sector statement, one benefit
 ```
 
 ---
@@ -297,7 +305,8 @@ result to `csv/output/`.
    `context/` files. Assemble with the **sonnet** model. Deck anatomy (all baked into the template):
    - **Header + hero + 4 stat tiles** (3 when no card has a signal: delete the signal tile), then segment blocks. Group contacts into **Signal-first**
      (fresh, sourced buying signal ≤ 60d → `sig-hot` red signal box with a live `.sigsrc` source
-     link + date) and **ICP-first** (strong fit, no live signal → `sig-fit` blue "why they fit"
+     link + date, above the card's `sig-fit` "why they fit" box: the signal says why now, the fit
+     says why them) and **ICP-first** (strong fit, no live signal → `sig-fit` blue "why they fit"
      box, no source link). Use `.approach` blocks to frame each group; `.seg-meta` for counts.
    - Each card = collapsible `<details class="lead">`: favicon, company + domain, attribute tags
      (`tag-sig`/`tag-icp` + language `tag-lang`), the signal/fit box, the contact with
@@ -313,6 +322,8 @@ result to `csv/output/`.
    - **`{{CSV_DATA}}`**: embed the sanitized `csv/output/` rows as an escaped JS string (`\r\n`
      line endings; quote any field containing a comma) so the Download button emits a real CSV
      offline — no server. Set `{{CSV_FILENAME}}` to `{client-slug}_prospects.csv`.
+   - **Deck copy is short and conversational** (Step 6): segment intros, approach texts, method note
+     and footer are one or two plain sentences each, with no warm-up and no generic sector statement.
    - **Hero = hook, not manual.** `{{HERO_HEADLINE}}` short (≤ ~7 words), outcome-first, no jargon;
      `{{HERO_INTRO}}` 1–2 short sentences on what they *get* (ready-to-send outreach to the right
      people), never how the pipeline works. Intrigue, don't overwhelm with technical detail.
@@ -331,7 +342,8 @@ result to `csv/output/`.
 
 **Step 7c — Programmatic self-QA** (browser QA is often unavailable — never depend on a screenshot):
 assert card count == contact count; **zero unfilled `{{TOKEN}}` placeholders remain** in the HTML;
-every signal card has a live source link + date; **zero empty fields / placeholders**; zero
+every signal card has a live source link + date; every card, signal cards too, has a non-empty
+"why they fit" box; **zero empty fields / placeholders**; zero
 em-dashes; one email + one LinkedIn draft per verified-email card (LinkedIn-only for `est-warn`
 cards) within char caps. **No third-party tool / data-provider name** appears in the rendered text
 (grep the visible copy for enrichment/search/scrape vendor names — none allowed; the lead's own
@@ -355,7 +367,9 @@ generated_message, char_count, has_posts
 Messages saved separately to `csv/output/messages.csv`. **Delivery is gated** — write the cover
 email to a file; never send on the user's behalf without explicit go-ahead (`conventions.md` #12).
 **The cover email never states a zero signal count** or that no signal was found: with no signal
-card it talks about the fit and the drafts. The run log may still give the count.
+card it talks about the fit and the drafts. The run log may still give the count. **The cover message
+has one goal, the click:** the link, the login, one teaser line and the CTA. No rundown of the
+contents; the deck does that.
 
 ---
 
@@ -364,7 +378,7 @@ card it talks about the fit and the drafts. The run log may still give the count
 - [ ] Messages feel personal, not templated
 - [ ] No profile info repetition
 - [ ] Clear value proposition in every message
-- [ ] Proper formatting (line breaks, character count 320–450)
+- [ ] Proper formatting (line breaks, email ~250–300 characters, LinkedIn ≤ ~180, fit ≤ ~200)
 - [ ] Hook differs between contacts (no copy-paste structure)
 - [ ] All data fields populated correctly
 - [ ] Client-specific context incorporated

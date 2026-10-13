@@ -56,6 +56,9 @@ Deliverability status is **blind to identity.** Providers return `DELIVERABLE` e
 - The email's domain must **belong to the target company** — match by **domain-root** against the target's known domain / company name.
 - If the domain is unfamiliar, **verify what it actually is** (e.g. scrape its title) before trusting it.
 - **Drop identity mismatches** even when status is `DELIVERABLE`.
+- **A company's mail domain can differ from its website.** Accept a second domain only when the company's own evidence
+  ties it to it: the address on its imprint or contact page, or a domain that redirects to the website. A similar name
+  is not evidence. Without this, the right person's address on the company's mail domain is dropped as a mismatch.
 
 This is the real anti-"made-up-address" guard; the `sanitize.py` deliverability filter (below) is only the last net.
 

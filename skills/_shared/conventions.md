@@ -134,6 +134,8 @@ These rules apply to every skill in the pipeline:
 11. **Directory/scrape-sourced company lists: search by NAME, validate by domain-root** — never filter enrichment providers by exact domain (a directory `acme.de` won't match a provider-indexed `acme.com` → both BC and FE return 0). Search by company name + location, then confirm each candidate against the target by domain-root or name token (`fe_company_name` cross-check) to guard generic names. See People-Source Cadence.
 12. **Delivery is gated** — writing a message/email to a file is fine; **sending on the user's behalf needs explicit go-ahead** every time.
 13. **Ask when critical input is missing** — if an input essential to a correct result is missing or ambiguous (skill-specific: e.g. ICP/target audience, offering & value prop, provider choice or credit budget, tone/language, a required ID or path), ask the user with the **AskUserQuestion** tool rather than guessing. Low-stakes defaults (poll interval, batch size within limits) don't need a prompt.
+14. **macOS has no `timeout` (nor `gtimeout`)** — never wrap a call in it; the command fails before the call runs. The shared
+    scripts carry their own limits (per-request timeouts, poll caps); give a hand-written `curl` call `-m <seconds>`.
 
 ---
 

@@ -216,6 +216,14 @@ for person in people:
 - Hit rate for EU SME audience (via LinkedIn URL filter): ~48% (15/31 companies). Very small/niche companies with few employees often have low FE index coverage — expect 0 results.
 - **Title filter is unreliable** — don't trust the API's title match. Query with **broad single-token titles** and score/filter roles **locally** in the response.
 - **The Finder search is 0-credit** (see conventions "People-Source Cadence") — run **union queries** (title tokens / full titles / name-only), then **dedupe by LinkedIn URL**.
+- **Leave known companies out before paying: `current_company_domains` with `exclude: true`** ("If true, excludes
+  results matching this value", FE's people-search reference: https://docs.fullenrich.com/api/v2/people/search/post).
+  Use it for a client's existing customers, or an association's members: people it removes are never returned, so
+  never billed (0.25 credits per person returned, see Cost). Measured: a list of a few hundred member domains, plus
+  the .de/.com/.eu/.net variant of each root, cut one industry value from 38 rows to 18. Add the TLD variants yourself
+  (the Finder is keyed on one domain per company, see above). The domain filter matched the root domain in another run
+  (an include of one agency's subdomain returned every agency under the same root), so don't exclude a subdomain of a
+  shared root.
 - **Drop the per-person `person_locations` filter** — it's often null in the index and silently returns zero results; filter location locally instead.
 
 ### Cost
