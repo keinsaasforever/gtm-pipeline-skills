@@ -1,5 +1,5 @@
-"""ATS job feeds (--ats-jobs): detection, one parse per adapter, the lookback filter, the careers-page fallback.
-No network. python3 test_ats_jobs.py"""
+"""Job feeds: ATS detection, one parse per adapter, the lookback filter, the careers-page fallback, the
+Arbeitsagentur name match and date rule, the hiring trigger. No network. python3 test_ats_jobs.py"""
 import json
 import os
 import sys
@@ -40,7 +40,7 @@ for html in ('<a href="https://www.recruitee.com/?utm=powered">', '<a href="http
 # careers domain, never onto a job portal; /karriere, /jobs, /careers only when the homepage links none.
 # A page that fails to load is skipped.
 def serve(pages):
-    def open_(url):
+    def open_(url, headers=None):
         if url not in pages:
             raise OSError(f"404 {url}")
         return url, pages[url] if isinstance(pages[url], bytes) else pages[url].encode()
@@ -144,4 +144,32 @@ careers = [{"markdown": f"Elektriker (m/w/d), veröffentlicht am {datetime.utcno
 a.detect = lambda domain, key=None: (None, careers)
 pages = ss.ats_job_pages("acme.de", 2, "key")
 assert pages == careers and ss.filter_crawl_pages_by_freshness(pages, 2) == careers[:1]
+
+# Arbeitsagentur: only the company's own postings (legal form, case and punctuation aside), dated by the
+# first publication. The search returns a sister company at the same address and ads it republished.
+assert a.company_key("ACME Elektro GmbH & Co. KG") == a.company_key("Acme-Elektro e.K.") == a.company_key("Acme Elektro")
+assert a.company_key("Acmeenergie GmbH") != a.company_key("Acme Elektro")
+ad = lambda firma, title, first, ref: {"firma": firma, "stellenangebotsTitel": title, "datumErsteVeroeffentlichung": first,
+                                       "aenderungsdatum": day(1), "referenznummer": ref,
+                                       "stellenlokationen": [{"adresse": {"ort": "Musterstadt"}}]}
+query = "was=Acme+Elektro&veroeffentlichtseit=60&size=25&zeitarbeit=false"
+serve({f"{a.ARBEITSAGENTUR_URL}?{query}": json.dumps({"ergebnisliste": [
+    ad("Acme Elektro GmbH", "KNX-Programmierer (m/w/d)", day(36), "10001-1-S"),
+    ad("Acmeenergie GmbH", "Elektroniker (m/w/d)", day(10), "10001-2-S"),
+    ad("Acme Elektro GmbH", "Techniker E-Mobilität (m/w/d)", day(335), "10001-3-S")]})})
+got = a.arbeitsagentur("Acme Elektro", 60)
+assert [(j["title"], j["url"], j["text"]) for j in got] == [
+    ("KNX-Programmierer (m/w/d)", "https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1-S", "Acme Elektro GmbH, Musterstadt"),
+    ("Techniker E-Mobilität (m/w/d)", "https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-3-S", "Acme Elektro GmbH, Musterstadt")], got
+a.detect = lambda domain, key=None: (None, [])
+pages = ss.ats_job_pages("acme-elektro.de", 2, None, "Acme Elektro", german=True)
+assert [p["metadata"]["sourceURL"] for p in pages] == ["https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1-S"], pages
+assert ss.ats_job_pages("acme-elektro.com", 2, None, "Acme Elektro", german=False) == []  # Germany only
+
+# The job feeds switch on when the include half of signal_criteria.md asks for hiring.
+for criteria in ("- Hiring installers for PV", "- Stellenanzeigen für Elektriker", "- stellt Monteure ein",
+                 "- Recruiting a Head of Operations", "- Neueinstellung im Vertrieb"):
+    assert a.wants_job_signals(criteria), criteria
+for criteria in ("- Opened a branch", "- Won a hospital project\n\n## Not a signal\n- Hiring news", "- Anfrage stellen"):
+    assert not a.wants_job_signals(criteria), criteria
 print("ok")

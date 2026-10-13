@@ -12,8 +12,10 @@ Sources (run per company, in parallel where possible):
   1. Parallel web search       — always on
   2. Firecrawl website crawl   — opt-in (--firecrawl)
   3. Parallel enrichment       — opt-in (--parallel-enrichment)
-  3b. ATS job feeds            — opt-in (--ats-jobs): dated postings from the company's public ATS
-                                 board (ats_jobs.py), scored as website pages; free
+  3b. Job feeds                — on when signal_criteria.md asks for hiring (--ats-jobs / --no-ats-jobs
+                                 force it): dated postings from the company's public ATS board and, for
+                                 a German company, the Arbeitsagentur job board (ats_jobs.py), scored as
+                                 website pages; free
   4. Signal Assessment LLM     — always on, scores merged signals 1–100
 
 Inputs from the client working directory:
@@ -28,7 +30,7 @@ Required env vars (via GTM_ENV_PATH per conventions.md):
   PARALLEL_API_KEY     — Parallel AI (web search, enrichment)
   OPENROUTER_API_KEY   — extraction + scoring LLMs
   FIRECRAWL_API_KEY    — only if --firecrawl
-  TINYFISH_API_KEY     — optional; --ats-jobs renders careers pages with it when set
+  TINYFISH_API_KEY     — optional; the job feeds render careers pages with it when set
 """
 
 from __future__ import annotations
@@ -567,28 +569,33 @@ def firecrawl_wait_for_completion(crawl_id: str, api_key: str) -> dict[str, Any]
     return None
 
 
-def ats_job_pages(domain: str, lookback_months: int, tinyfish_key: str | None = None) -> list[dict]:
-    """Postings from the company's public ATS feed (--ats-jobs) published inside the window, as website
-    pages. The posting date goes right before the title, so source_date() reads it as the page's date line
-    and the usual freshness gate keeps the page. With no known ATS, the careers pages TinyFish rendered go
-    in as they are, with no metadata date: only a page that prints a fresh date passes the gate. A
-    detection or feed failure is logged and skipped."""
+def ats_job_pages(domain: str, lookback_months: int, tinyfish_key: str | None = None,
+                  company_name: str = "", german: bool = False) -> list[dict]:
+    """Job postings published inside the window, as website pages: from the company's public ATS feed and,
+    for a German company, from the Arbeitsagentur job board. The posting date goes right before the title,
+    so source_date() reads it as the page's date line and the usual freshness gate keeps the page. With no
+    known ATS, the careers pages TinyFish rendered go in as they are, with no metadata date: only a page
+    that prints a fresh date passes the gate. A failure of either source is logged and skipped."""
+    found, careers_pages, postings = None, [], []
     try:
         found, careers_pages = ats_jobs.detect(domain, tinyfish_key)
         postings = ats_jobs.jobs(*found) if found else []
     except Exception as e:
         print(f"  {domain}: ATS jobs skipped ({e})", file=sys.stderr)
-        return []
-    if careers_pages:
-        print(f"  {domain}: no known ATS, {len(careers_pages)} careers page(s) scraped")
-        return careers_pages
+    if german and company_name:
+        try:
+            postings += ats_jobs.arbeitsagentur(company_name, lookback_months * 30)
+        except Exception as e:
+            print(f"  {domain}: Arbeitsagentur skipped ({e})", file=sys.stderr)
     fresh = sorted((j for j in postings if is_fresh(dates_in(j["published"]), lookback_months)),
                    key=lambda j: j["published"], reverse=True)[:ATS_MAX_POSTINGS]
-    if found:
-        print(f"  {domain}: {found[0]}:{found[1]}, {len(postings)} postings, {len(fresh)} inside the window")
-    return [{"markdown": f"{j['published']} {j['title']}\n\n{j['text'][:ATS_TEXT_CHARS]}",
-             "metadata": {"title": j["title"], "sourceURL": j["url"], "publishedTime": j["published"]}}
-            for j in fresh]
+    if found or postings or careers_pages:
+        print(f"  {domain}: {':'.join(found) if found else 'no known ATS'}, {len(postings)} postings, "
+              f"{len(fresh)} inside the window, {len(careers_pages)} careers page(s) scraped")
+    return careers_pages + [
+        {"markdown": f"{j['published']} {j['title']}\n\n{j['text'][:ATS_TEXT_CHARS]}",
+         "metadata": {"title": j["title"], "sourceURL": j["url"], "publishedTime": j["published"]}}
+        for j in fresh]
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -989,7 +996,7 @@ class RunConfig:
     # being crawled via the Firecrawl API. Lets users without a FIRECRAWL_API_KEY supply
     # pages crawled through the Firecrawl MCP (or any other means). No key required.
     firecrawl_pages_dir: Path | None = None
-    # Add dated postings from the company's public ATS feed to its website pages (free).
+    # Add dated job postings (ATS feed, Arbeitsagentur for a German company) to the website pages (free).
     ats_jobs: bool = False
     tinyfish_key: str | None = None
 
@@ -1053,7 +1060,9 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
             if crawl_result:
                 pages = crawl_result.get("data", [])
     if cfg.ats_jobs:
-        pages += ats_job_pages(company_domain, cfg.lookback_months, cfg.tinyfish_key)
+        country = (row.get("company_hq_country") or row.get("company_country") or row.get("country") or "").strip().lower()
+        german = country in ("de", "germany", "deutschland") or company_domain.endswith(".de")
+        pages += ats_job_pages(company_domain, cfg.lookback_months, cfg.tinyfish_key, company_name, german)
     if pages:
         pages = filter_crawl_pages_by_freshness(pages, cfg.lookback_months)
 
@@ -1136,9 +1145,11 @@ def parse_args() -> argparse.Namespace:
                    help="Read pre-crawled Firecrawl pages from {dir}/{domain}.json instead of "
                         "calling the Firecrawl API. Use when you only have Firecrawl via MCP "
                         "(no FIRECRAWL_API_KEY): the agent crawls and writes the page files.")
-    p.add_argument("--ats-jobs", action="store_true",
-                   help="Add dated job postings from the company's public ATS feed (Greenhouse, Ashby, Lever, "
-                        "Personio, Workable, SmartRecruiters, Recruitee, Teamtailor) as website pages. Free.")
+    p.add_argument("--ats-jobs", action=argparse.BooleanOptionalAction, default=None,
+                   help="Job feeds: dated postings from the company's public ATS feed (Greenhouse, Ashby, Lever, "
+                        "Personio, Workable, SmartRecruiters, Recruitee, Teamtailor) and, for a German company, "
+                        "the Arbeitsagentur job board, as website pages. Free. Default: on when "
+                        "signal_criteria.md asks for hiring; --ats-jobs / --no-ats-jobs force it.")
     p.add_argument("--parallel-enrichment", action="store_true",
                    help="Enable Parallel structured enrichment (extra cost; useful for funding/hiring data points)")
     p.add_argument("--llm-backend", choices=["agent", "claude-cli", "openrouter"],
@@ -1190,6 +1201,8 @@ def main() -> int:
     except FileNotFoundError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
+    # Job feeds run whenever the client asks for hiring signals; the flags force them on or off.
+    job_feeds = args.ats_jobs if args.ats_jobs is not None else ats_jobs.wants_job_signals(context.signal_criteria)
 
     parallel_key = os.environ.get("PARALLEL_API_KEY", "")
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -1230,7 +1243,7 @@ def main() -> int:
     print(f"Loaded {len(rows)} companies from {input_csv}")
     print(f"Sources enabled: web_search=ON (max_results={args.max_results}), "
           f"firecrawl={firecrawl_mode}, "
-          f"ats_jobs={'ON' if args.ats_jobs else 'OFF'}, "
+          f"job_feeds={'ON' if job_feeds else 'OFF'}{'' if args.ats_jobs is not None else ' (auto)'}, "
           f"parallel_enrichment={'ON' if args.parallel_enrichment else 'OFF'}")
     print(f"LLM backend: {args.llm_backend}")
     if args.llm_backend == "agent":
@@ -1268,7 +1281,7 @@ def main() -> int:
         context=context,
         max_results=args.max_results,
         firecrawl_pages_dir=args.firecrawl_pages_dir,
-        ats_jobs=args.ats_jobs,
+        ats_jobs=job_feeds,
         tinyfish_key=tinyfish_key or None,
         raw_evidence_dir=raw_evidence_dir if args.llm_backend == "agent" else None,
     )
