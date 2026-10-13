@@ -2,7 +2,7 @@
 import csv, json, os, sys
 
 sys.path.insert(0, os.path.expanduser("~/.claude/skills/gtm-pipeline/_shared"))
-KEPT = ("valid", "valid-risky")  # Kitt verdicts that ship (gtm-demo Step 5)
+KEPT = ("valid", "valid-risky", "published")  # statuses that ship (gtm-demo Step 5)
 
 
 def deck_config():

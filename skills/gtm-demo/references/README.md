@@ -20,7 +20,8 @@ generalized; two earlier runs each hand-wrote the same five scripts. `python3 te
 email_status, country`. Optional `email_domain`: the company's mail domain(s) when its own evidence ties them to it
 (imprint address, a domain that redirects to the website); the domain check accepts them (SKILL.md Step 5).
 `segment` is a key from `deck.json`; `country` is display text in the deck's
-language ("Deutschland"). An address ships only with `email_status` `valid` or `valid-risky`.
+language ("Deutschland"). An address ships only with `email_status` `valid`, `valid-risky` or `published` (Kitt said
+`unknown`, the organisation's own site prints it next to the name; `email_source` holds that page's URL, SKILL.md Step 5).
 
 **`csv/intermediate/signals.csv`** — signal-search output after scoring: `company_domain`, `scoredSignals`
 (JSON list; the first item is the kept signal: `date` YYYY-MM-DD, `summary` in the deck language,

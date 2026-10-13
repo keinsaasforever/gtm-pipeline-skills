@@ -8,22 +8,22 @@ cfg, data = deck_config(), json.load(open("csv/intermediate/deck_data.json", enc
 csv_text = open("csv/output/contacts_enriched.csv", encoding="utf-8", newline="").read()
 LABELS = {
     "de": dict(signal="Kaufsignal", fit="Warum es passt", contact="Entscheider", subject="Betreff", draft="Nachrichtenentwurf",
-               verified="verifiziert", likely="wahrscheinlich gültig", on_request="E-Mail auf Anfrage",
+               verified="verifiziert", likely="wahrscheinlich gültig", published="auf der Website veröffentlicht", on_request="E-Mail auf Anfrage",
                cta_a="CTA A · Frage", cta_b="CTA B · Angebot", sig_first="Signal zuerst", icp="ICP-Fit", segment="Segment",
                meta=("{n} Unternehmen", "{s} mit aktuellem Kaufsignal", "{m} mit E-Mail"), tag_sig="Signal",
-               stat1="Entscheider", stat1_named="Ansprechpartner", stat2="mit aktuellem Kaufsignal", stat3="geprüfte E-Mail-Adressen",
+               stat1="Entscheider", stat1_named="Ansprechpartner", stat2="mit aktuellem Kaufsignal", stat3="geprüfte E-Mail-Adressen", stat3_all="E-Mail-Adressen",
                download="CSV herunterladen", expand="Alle aufklappen", collapse="Alle zuklappen",
                months=["Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sept.", "Okt.", "Nov.", "Dez."]),
     "en": dict(signal="Buying signal", fit="Why they fit", contact="Decision-maker", subject="Subject", draft="Draft message",
-               verified="verified", likely="likely valid", on_request="Email on request",
+               verified="verified", likely="likely valid", published="published on their website", on_request="Email on request",
                cta_a="CTA A · Question", cta_b="CTA B · Offer", sig_first="Signal first", icp="ICP fit", segment="Segment",
                meta=("{n} companies", "{s} with a fresh buying signal", "{m} with email"), tag_sig="Signal",
-               stat1="decision-makers", stat1_named="named contacts", stat2="with a fresh buying signal", stat3="checked email addresses",
+               stat1="decision-makers", stat1_named="named contacts", stat2="with a fresh buying signal", stat3="checked email addresses", stat3_all="email addresses",
                download="Download CSV", expand="Expand all", collapse="Collapse all",
                months=["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]),
 }
 L = LABELS[cfg["lang"]]
-BADGE = {"valid": ("est-ok", L["verified"]), "valid-risky": ("est-ok", L["likely"])}
+BADGE = {"valid": ("est-ok", L["verified"]), "valid-risky": ("est-ok", L["likely"]), "published": ("est-pub", L["published"])}
 e = lambda s: html.escape(str(s or ""), quote=True)
 para = lambda s: e(s).replace("\n", "<br>")
 
@@ -95,7 +95,9 @@ tokens = {
     "LANG": cfg["lang"], "CLIENT_NAME": cfg["client_name"], "HERO_HEADLINE": cfg["hero_headline"], "HERO_INTRO": cfg["hero_intro"],
     "STAT1_N": str(len(data)), "STAT1_LABEL": L["stat1_named"] if any(r.get("contact_label") for r in data) else L["stat1"],
     "STAT2_N": str(n_sig), "STAT2_LABEL": L["stat2"],
-    "STAT3_N": str(sum(bool(r["email"]) for r in data)), "STAT3_LABEL": L["stat3"],
+    # a published address was never checked: with one in the deck the tile stops saying "checked"
+    "STAT3_N": str(sum(bool(r["email"]) for r in data)),
+    "STAT3_LABEL": L["stat3_all"] if any(r["email_status"] == "published" for r in data) else L["stat3"],
     "STAT4_N": cfg["stat4"]["n"], "STAT4_LABEL": cfg["stat4"]["label"],
     "LBL_DOWNLOAD": L["download"], "LBL_EXPAND": L["expand"], "LBL_COLLAPSE": L["collapse"],
     "METHOD_NOTE": cfg["method_note"], "FOOTER_HEADLINE": cfg["footer_headline"], "FOOTER_BODY": cfg["footer_body"],

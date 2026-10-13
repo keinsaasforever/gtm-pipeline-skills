@@ -49,7 +49,10 @@ INTERNAL_PREFIXES = ("fe_", "bc_", "pipe0_", "_", "provider_", "raw_")
 EMAIL_POLICIES = {
     # keinsaas default: keep deliverable, high-probability, and catch-all (usually usable on
     # corporate domains); Kitt's VALID_RISKY is its catch-all verdict. Drop unknown/invalid.
-    "standard": {"DELIVERABLE", "VALID", "HIGH_PROBABILITY", "CATCH_ALL", "ACCEPT_ALL", "VALID_RISKY"},
+    # PUBLISHED: Kitt said unknown, but the organisation's own site prints the address next to the
+    # person's name (set by hand, gtm-demo Step 5). Shown as published, never as verified.
+    "standard": {"DELIVERABLE", "VALID", "HIGH_PROBABILITY", "CATCH_ALL", "ACCEPT_ALL", "VALID_RISKY",
+                 "PUBLISHED"},
     # strict: also drop catch-all (FullEnrich CATCH_ALL, Kitt VALID_RISKY).
     "strict": {"DELIVERABLE", "VALID", "HIGH_PROBABILITY"},
     # lenient: any non-empty email, whatever the status.

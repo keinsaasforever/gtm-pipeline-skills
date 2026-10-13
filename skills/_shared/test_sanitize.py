@@ -50,6 +50,11 @@ assert clean[1]["email"] == "tom@risky.de", clean               # valid-risky sh
 assert [r["email"] for r in clean[2:]] == ["", ""], clean       # unverified, not-yours
 assert report["emails_blanked"] == 1 and len(report["emails_wrong_person"]) == 1, report
 
+# an address the organisation itself prints next to the name ships as `published`, but not under strict
+pub = [{"full_name": "Pia Amt", "email": "pia.amt@city.example", "email_status": "published"}]
+assert sanitize_rows(pub, require_email=False, drop_empty=False)[0][0]["email"] == "pia.amt@city.example"
+assert sanitize_rows(pub, email_policy="strict", require_email=False, drop_empty=False)[0][0]["email"] == ""
+
 clean, report = sanitize_rows(rows, require_email=True)         # the old behaviour still drops
 assert [r["full_name"] for r in clean] == ["Eva Echt", "Tom Riskant"], clean
 assert report["rows_dropped_bad_email"] == 2, report

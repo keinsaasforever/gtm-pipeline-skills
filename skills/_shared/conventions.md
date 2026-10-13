@@ -333,9 +333,11 @@ it) is sanitized by **`_shared/sanitize.py`** — a deterministic, no-LLM step e
 applies before producing the deliverable:
 
 - **Drop bad emails** — keep only allowed deliverability statuses (default policy `standard`:
-  Deliverable + High-probability + Catch-all + Kitt's `valid` and `valid-risky`; `strict` also drops
-  catch-all and `valid-risky`). Kitt's `unknown`, `invalid` and `unverified` are in no policy, so
-  an address the gate rejected or never checked cannot reach a lead. The real anti-"made-up-address"
+  Deliverable + High-probability + Catch-all + Kitt's `valid` and `valid-risky` + `published`; `strict`
+  also drops catch-all, `valid-risky` and `published`). Kitt's `unknown`, `invalid` and `unverified` are
+  in no policy, so an address the gate rejected or never checked cannot reach a lead. `published` is
+  set by hand only, for a Kitt `unknown` that the organisation's own site prints next to the person's
+  name (gtm-demo Step 5). The real anti-"made-up-address"
   guard is the upstream **domain-identity cross-check** (people-enrichment): a `DELIVERABLE` email
   on a domain that isn't the target's is a wrong-company hit — drop it.
 - **Pull wrong-person addresses** — one mailbox on two contacts means at most one owner, so
@@ -501,7 +503,7 @@ Several providers have similarly-named products. Be explicit about which is mean
 | Product | Skill | Purpose | Notes |
 |---------|-------|---------|-------|
 | **Kitt find_email** | people-enrichment | **Priority-1 email enrichment** | Live finder: full name + company domain, $0.005 per address found, misses free. Its hits come back verified. Engine: `_shared/kitt.py` |
-| **Kitt verify_email** | people-enrichment | **The verifier gate** | Checks every *other* provider's address before it is kept. `valid` / `valid-risky` / `unknown` / `invalid`; a demo ships `valid` and `valid-risky`. Same engine, `--no-find` |
+| **Kitt verify_email** | people-enrichment | **The verifier gate** | Checks every *other* provider's address before it is kept. `valid` / `valid-risky` / `unknown` / `invalid`; a demo ships `valid` and `valid-risky` (and an `unknown` the organisation's own site publishes, as `published`). Same engine, `--no-find` |
 | **PhantomBuster Email Finder** | people-enrichment | **Priority-1 email enrichment** | PB's built-in email waterfall (BetterContact et al.) via the "Email Finder" phantom. Input staged from a Google Sheet by `_shared/pb_email_finder.py`. **Runs after Kitt, on its misses; if N/A (no PB key / staging sheet / Google OAuth, or a failed phantom run → exit 3), skip to FullEnrich.** Grades nothing, so every PB address goes through the Kitt gate. |
 | **BetterContact Lead Finder** | people-search | Synchronous people discovery API | Returns contacts by company + role filters |
 | **BetterContact async enrichment** | people-enrichment | Async email/phone enrichment | Slow due to multi-provider waterfall. Email hit rate is low (~14% in our tests) — **prefer FullEnrich for email**. Acceptable for phone if user has patience. |

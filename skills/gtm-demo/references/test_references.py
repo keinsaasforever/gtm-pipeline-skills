@@ -1,5 +1,6 @@
 """End-to-end check of the demo scripts on a two-card fixture: nickname greeting, the fit-length warning, per-card
-contact_label, the fit box on signal cards, a deck with no address, and no zero signal count anywhere.
+contact_label, the fit box on signal cards, a published address's badge, a deck with no address, and no zero signal
+count anywhere.
 python3 test_references.py"""
 import csv, json, os, subprocess, sys, tempfile
 from datetime import datetime, timedelta
@@ -39,17 +40,17 @@ def write_signals(fresh):
 people = [("Joshua", "Lane", "acme-casks.com", "Hi Josh,", "Spirits buyer"), ("Mia", "Stone", "stone-spirits.com", "Hi Mia,", "")]
 
 
-def write_contacts(mia_has_address=True):
+def write_contacts(mia_status="valid"):  # "" = Mia has no address
     with open(tmp / "csv/intermediate/contacts_enriched.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["company_name", "company_domain", "segment", "full_name", "first_name", "last_name",
                                           "linkedin_profile_url", "email", "email_status", "country"])
         w.writeheader()
         for first, last, dom, _, _ in people:
-            kept = first == "Mia" and mia_has_address
+            kept = first == "Mia" and mia_status
             w.writerow({"company_name": dom.split(".")[0].title(), "company_domain": dom, "segment": "a",
                         "full_name": f"{first} {last}", "first_name": first, "last_name": last,
                         "linkedin_profile_url": f"https://www.linkedin.com/in/{first.lower()}",
-                        "email": "mia@stone-spirits.com" if kept else "", "email_status": "valid" if kept else "",
+                        "email": "mia@stone-spirits.com" if kept else "", "email_status": mia_status if kept else "",
                         "country": "USA"})
 
 
@@ -99,7 +100,17 @@ assert ">1</div><div class=\"l\">with a fresh buying signal<" in page and "no fr
 assert page.count('<div class="siglabel">Why they fit</div>') == 2   # the signal card keeps its fit box
 assert run("qa_deck.py", "deck.html").startswith("PASS")
 
-write_contacts(mia_has_address=False)                      # no card keeps an address: the deck still builds
+write_contacts(mia_status="published")                     # an address the organisation's own site prints: its own badge
+run("build_output.py")
+run("render_deck.py", "deck.html")
+page = (tmp / "deck.html").read_text()
+assert '<span class="est est-pub">published on their website</span>' in page and "verified" not in page
+assert ">email addresses<" in page and "checked email addresses" not in page   # the tile no longer says checked
+assert run("qa_deck.py", "deck.html").startswith("PASS")
+(tmp / "bad.html").write_text(page.replace('est est-pub">published on their website', 'est est-ok">verified'))
+assert "badge claims verified for a published address" in run("qa_deck.py", "bad.html")
+
+write_contacts(mia_status="")                              # no card keeps an address: the deck still builds
 run("build_output.py")
 run("render_deck.py", "deck.html")
 assert 'class="cmail"' not in (tmp / "deck.html").read_text()

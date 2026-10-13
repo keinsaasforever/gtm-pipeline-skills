@@ -36,8 +36,13 @@ for c in cards:
         check(src and re.search(r"20\d\d", src.group(2)), f"{name}: signal without live link + date")
     else:
         check(not DATE.search(html.unescape(re.sub(r"<[^>]+>", " ", c))), f"{name}: a date on an ICP-fit card")
+    badge = re.search(r'<span class="est (est-\w+)">([^<]*)</span>', c)
+    # only Kitt's "valid" may say verified: a catch-all or a published address was never confirmed
+    check(d["email_status"] == "valid" or not (badge and re.search("verifi", badge.group(2), re.I)),
+          f"{name}: badge claims verified for a {d['email_status'] or 'missing'} address")
     if 'class="cmail"' in c:
-        check(d["email_status"] in KEPT and "est est-ok" in c, f"{name}: address without a kept verdict / est-ok badge")
+        want = "est-pub" if d["email_status"] == "published" else "est-ok"
+        check(d["email_status"] in KEPT and badge and badge.group(1) == want, f"{name}: address without a kept verdict / {want} badge")
         check(c.count('<span class="ml">LinkedIn</span>') == 1 and len(re.findall(r'<div class="msg-sub"><span class="ml">', c)) == 1,
               f"{name}: needs exactly one email + one LinkedIn draft")
         mails.append(d["email"].lower())

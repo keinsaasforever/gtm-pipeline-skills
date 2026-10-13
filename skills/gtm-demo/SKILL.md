@@ -291,6 +291,14 @@ Run **people-enrichment** on the filtered contacts. **Demo mode: email only, no 
    company's addresses, use that format for the person and re-check it with `kitt.py --no-find`.
    A machinery run, 2026-09-24: Kitt gave `lastf@` and then `firstlast@` for the same person at a
    large electronics maker, where 98 % of addresses are `first.last@`.
+   **One exception, `unknown` only** (2026-10-13): public-sector mail servers often don't answer
+   Kitt's check. When the organisation's **own** website or own document (staff page, org chart,
+   imprint, its own PDF) prints that exact address next to that person's name, put it back by hand
+   after the last `kitt.py` pass (a re-run gates it again) with `email_status` `published`, and write
+   that page's URL into `email_source`. Example: a city's IT head whose address is printed on the
+   city's staff page. Never for `invalid`, never for a pattern or format guess, never from a
+   third-party source (a directory, a data provider, an article on another site). The deck shows it
+   with its own badge and never as verified (Step 7b).
 4. **One address, one person.** Kitt can hand the same address to two people (one mailbox for two
    "Scott"s at one company, 2026-10-09), so `kitt.py` dedupes across contacts on every pass: a shared
    address stays only with the person its local part names (`scott.clay@` → Scott Clay); otherwise
@@ -545,7 +553,7 @@ clean, report = sanitize_rows(rows, email_policy="standard", max_signal_age_days
 **`require_email=False` is what makes a demo card survive a failed check** — the address goes,
 the contact stays, and Step 7b gives it the `est-warn` badge and the LinkedIn draft only.
 
-It drops bad-status emails (default keeps Deliverable/High-prob/Catch-all/Kitt `valid` + `valid-risky`), strips provider/source
+It drops bad-status emails (default keeps Deliverable/High-prob/Catch-all/Kitt `valid` + `valid-risky` + `published`), strips provider/source
 labels + internal status codes, removes all-empty columns, drops stale/sourceless signals, and
 enforces message length + em-dash rules. See `conventions.md` → Output Sanitization. Write the
 result to `csv/output/`.
@@ -569,7 +577,10 @@ result to `csv/output/`.
      LinkedIn + email and a deliverability badge, and the message draft (email subject + body,
      then LinkedIn) with an A/B `cta-chip`. **The badge states a fact, not a hope:** `est-ok`
      ("verified" / "verifiziert") where `email_status` is Kitt's `valid`, `est-ok` ("likely valid" /
-     "wahrscheinlich gültig") where it is `valid-risky`; `est-warn` ("on request" / "auf Anfrage")
+     "wahrscheinlich gültig") where it is `valid-risky`; `est-pub` ("published on their website" / "auf der
+     Website veröffentlicht") where it is `published`, never a verified claim. With any `published` address
+     the third stat tile counts "email addresses" / "E-Mail-Adressen" instead of checked ones, and the
+     method note must not say every address was checked. `est-warn` ("on request" / "auf Anfrage")
      for every card with no address — Kitt found none, or the one it checked came back unknown,
      invalid or unchecked (Step 5). On an `est-warn` card
      **drop the email draft and keep only the LinkedIn draft**.
@@ -612,8 +623,9 @@ assert card count == contact count; **zero unfilled `{{TOKEN}}` placeholders rem
 every signal card has a live source link + date; every card, signal cards too, has a non-empty
 "why they fit" box; **zero empty fields / placeholders**; zero
 em-dashes; one email + one LinkedIn draft per verified-email card (LinkedIn-only for `est-warn`
-cards) within char caps. **Every address in the deck carries an `est-ok` badge and an
-`email_status` of `valid` or `valid-risky` in the CSV it was built from** — an address with any other verdict, or a
+cards) within char caps. **Every address in the deck carries an `est-ok` badge with an
+`email_status` of `valid` or `valid-risky`, or the `est-pub` badge with `published`, in the CSV it was built from**,
+and only a `valid` address's badge may say verified — an address with any other verdict, or a
 badge on a card with no address, is a build bug, not a styling choice. **No third-party tool / data-provider name** appears in the rendered text
 (grep the visible copy for enrichment/search/scrape vendor names — none allowed; the lead's own
 LinkedIn link is the only exception). **Read the sanitize report before shipping:** an address in
