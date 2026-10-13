@@ -28,6 +28,7 @@ Required env vars (via GTM_ENV_PATH per conventions.md):
   PARALLEL_API_KEY     — Parallel AI (web search, enrichment)
   OPENROUTER_API_KEY   — extraction + scoring LLMs
   FIRECRAWL_API_KEY    — only if --firecrawl
+  TINYFISH_API_KEY     — optional; --ats-jobs renders careers pages with it when set
 """
 
 from __future__ import annotations
@@ -566,16 +567,21 @@ def firecrawl_wait_for_completion(crawl_id: str, api_key: str) -> dict[str, Any]
     return None
 
 
-def ats_job_pages(domain: str, lookback_months: int) -> list[dict]:
+def ats_job_pages(domain: str, lookback_months: int, tinyfish_key: str | None = None) -> list[dict]:
     """Postings from the company's public ATS feed (--ats-jobs) published inside the window, as website
     pages. The posting date goes right before the title, so source_date() reads it as the page's date line
-    and the usual freshness gate keeps the page. A detection or feed failure is logged and skipped."""
+    and the usual freshness gate keeps the page. With no known ATS, the careers pages TinyFish rendered go
+    in as they are, with no metadata date: only a page that prints a fresh date passes the gate. A
+    detection or feed failure is logged and skipped."""
     try:
-        found = ats_jobs.detect(domain)
+        found, careers_pages = ats_jobs.detect(domain, tinyfish_key)
         postings = ats_jobs.jobs(*found) if found else []
     except Exception as e:
         print(f"  {domain}: ATS jobs skipped ({e})", file=sys.stderr)
         return []
+    if careers_pages:
+        print(f"  {domain}: no known ATS, {len(careers_pages)} careers page(s) scraped")
+        return careers_pages
     fresh = sorted((j for j in postings if is_fresh(dates_in(j["published"]), lookback_months)),
                    key=lambda j: j["published"], reverse=True)[:ATS_MAX_POSTINGS]
     if found:
@@ -985,6 +991,7 @@ class RunConfig:
     firecrawl_pages_dir: Path | None = None
     # Add dated postings from the company's public ATS feed to its website pages (free).
     ats_jobs: bool = False
+    tinyfish_key: str | None = None
 
 
 def extract_domain(website: str) -> str:
@@ -1046,7 +1053,7 @@ def process_company(row: dict, cfg: RunConfig) -> dict:
             if crawl_result:
                 pages = crawl_result.get("data", [])
     if cfg.ats_jobs:
-        pages += ats_job_pages(company_domain, cfg.lookback_months)
+        pages += ats_job_pages(company_domain, cfg.lookback_months, cfg.tinyfish_key)
     if pages:
         pages = filter_crawl_pages_by_freshness(pages, cfg.lookback_months)
 
@@ -1188,6 +1195,7 @@ def main() -> int:
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
     firecrawl_key = os.environ.get("FIRECRAWL_API_KEY", "")
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    tinyfish_key = os.environ.get("TINYFISH_API_KEY", "")
     # OpenRouter is a dormant legacy backend: the code is kept (for `main`) but is
     # inert unless deliberately re-enabled. Passing --llm-backend openrouter is not
     # enough — GTM_ALLOW_OPENROUTER=1 must also be set. This guarantees no deepseek/
@@ -1261,6 +1269,7 @@ def main() -> int:
         max_results=args.max_results,
         firecrawl_pages_dir=args.firecrawl_pages_dir,
         ats_jobs=args.ats_jobs,
+        tinyfish_key=tinyfish_key or None,
         raw_evidence_dir=raw_evidence_dir if args.llm_backend == "agent" else None,
     )
 

@@ -187,14 +187,21 @@ Downstream `sanitize.py` drops any signal still lacking a source/date or left `P
 
 Add `--ats-jobs` when the client's `signal_criteria.md` includes hiring. A job page rarely prints its
 date, so a crawled one seldom survives the freshness gate. The flag reads the company's public ATS
-feed instead, where every posting has a publish date. The board comes from the ATS link on the
-company's own homepage, `/karriere`, `/jobs` or `/careers`, never from a token guessed off the domain.
-Postings published inside the lookback window (newest 20) join the company's website pages, so the
-same freshness gate, extraction and 5b rubric apply; cite the posting URL.
+feed instead, where every posting has a publish date. The board comes from an ATS link on the
+company's own site: the homepage, the careers pages it links to (a careers subdomain or careers domain
+included, never a job portal) and the jobs pages those link to; `/karriere`, `/jobs` and `/careers`
+only when the homepage links none. Never from a token guessed off the domain. With
+`TINYFISH_API_KEY` exported, a site where the plain read finds no ATS is rendered with TinyFish fetch
+(free), which catches pages built by JavaScript and ATS iframes. Postings published inside the
+lookback window (newest 20) join the company's website pages, so the same freshness gate, extraction
+and 5b rubric apply; cite the posting URL.
 
-Supported: Greenhouse, Ashby, Lever (global and EU), Personio, Workable, SmartRecruiters (title and
-date only), Recruitee, Teamtailor (`*.teamtailor.com` hosts). **Free:** public feeds, no key. A
-company whose site links none of them, or whose feed fails, is logged and skipped.
+Supported: Greenhouse (EU boards too), Ashby, Lever (global and EU), Personio, Workable,
+SmartRecruiters (title and date only), Recruitee, Teamtailor (`*.teamtailor.com` hosts). **Free:**
+public feeds, no key. With no supported ATS, the rendered careers pages (at most 3) join the website
+pages as they are; one passes only on a fresh date it prints itself, and a signal from it cites the
+posting's own link, never the careers page. A company whose site yields neither, or whose feed fails,
+is logged and skipped.
 
 ### Step 6 — Review and log
 
