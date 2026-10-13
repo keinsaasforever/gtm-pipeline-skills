@@ -34,9 +34,9 @@ language ("Deutschland"). An address ships only with `email_status` `valid` or `
   "email_subject": "…", "email_p1": "Guten Tag Herr X,\nhook", "email_p2": "bridge + offer",
   "email_p3": "CTA\nViele Grüße\nName", "li_p1": "Guten Tag Herr X,\nhook", "li_p2": "offer + CTA"}}
 ```
-No kept address → the four `email_*` fields are empty. Length targets (SKILL.md Step 6): `why_they_fit` ≤ ~200
-characters, email body ~250–300, LinkedIn ≤ ~180; `check_messages.py` warns above them and fails past 450 / 400.
-Every card shows `why_they_fit`, a signal card below its signal. `contact_label` (optional) is the card's label for the
+No kept address → the four `email_*` fields are empty. `why_they_fit` is deck copy: at most ~200 characters, one or
+two plain sentences (SKILL.md Step 7b); `check_messages.py` warns above that. Every card shows it, a signal card
+below its signal. `contact_label` (optional) is the card's label for the
 person, what the evidence supports ("Spirits buyer", "Partner"); empty → "Entscheider" / "Decision-maker". When any
 card carries one, the first stat tile counts "Ansprechpartner" / "named contacts" instead of decision-makers.
 Both CTA variants are yes/no questions offering something free (`A` and `B` offer different things); none asks for a call (SKILL.md Step 6).

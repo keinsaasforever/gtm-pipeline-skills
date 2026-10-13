@@ -1,6 +1,6 @@
 """Check csv/intermediate/messages.json against the message rules before building anything.
-python3 check_messages.py   (from {client-slug}-gtm/) — prints CLEAN or the list of problems, then any draft over the
-SKILL.md Step 6 length targets (fit ~200, email body ~300, LinkedIn ~180) as warnings. Only the hard caps fail."""
+python3 check_messages.py   (from {client-slug}-gtm/) — prints CLEAN or the list of problems, then any "why they fit"
+over ~200 characters (SKILL.md Step 7b, deck copy) as a warning."""
 import re
 from collections import Counter
 from common import contacts, deck_config, has_address, messages
@@ -34,7 +34,6 @@ for c in contacts():
     if (fit := len(m.get("why_they_fit", ""))) > 200: warns.append(f"{who}: why_they_fit {fit} > ~200")
     li = len(m["li_p1"]) + 1 + len(m["li_p2"])
     if li > 400: errs.append(f"{who}: LinkedIn {li} > 400")
-    elif li > 180: warns.append(f"{who}: LinkedIn {li} > ~180")
     li_cta = re.split(r"(?<=[.?])\s+", m["li_p2"].strip())[-1]
     if not li_cta.endswith("?"): errs.append(f"{who}: LinkedIn CTA is not a question")
     if CALL_ASK.search(li_cta): errs.append(f"{who}: LinkedIn CTA asks for a call '{CALL_ASK.search(li_cta).group()}'")
@@ -47,8 +46,7 @@ for c in contacts():
         if len(m["email_subject"]) > 60: errs.append(f"{who}: subject > 60")
         hook, cta = m["email_p1"].split("\n", 1)[-1], m["email_p3"][: -len("\n" + signoff)]
         body = len(hook) + 1 + len(m["email_p2"]) + 1 + len(cta)
-        if body > 450: errs.append(f"{who}: email body {body} > 450")
-        elif body > 300: warns.append(f"{who}: email body {body} > ~300")
+        if not 320 <= body <= 450: errs.append(f"{who}: email body {body} not in 320-450")
         if li >= len(m["email_p1"]) + len(m["email_p2"]) + len(m["email_p3"]): errs.append(f"{who}: LinkedIn not shorter than email")
         if hook.strip() == li_hook.strip(): errs.append(f"{who}: LinkedIn hook copies the email hook")
         if not cta.rstrip().endswith("?"): errs.append(f"{who}: email CTA is not a question")
@@ -60,4 +58,4 @@ for ch in ("email", "li"):
     for p, n in Counter(" ".join(h.split()[:3]) for c_, h in hooks if c_ == ch).items():
         if n > 2: errs.append(f"{ch} opening '{p}' used {n}x")
 print("CLEAN" if not errs else "ERRORS:\n  " + "\n  ".join(errs))
-if warns: print("OVER LENGTH TARGET (shorten):\n  " + "\n  ".join(warns))
+if warns: print("DECK COPY OVER TARGET (shorten):\n  " + "\n  ".join(warns))
