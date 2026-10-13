@@ -193,6 +193,8 @@ def is_article_url(url: str) -> bool:
     profile only shows that something exists somewhere, and nobody can check the claim against it
     (a construction-supplier run, 2026-09-18: a "signal" cited a LinkedIn company page from which the post had gone)."""
     parts = urlsplit(str(url))
+    if "gh_jid=" in parts.query:  # one Greenhouse posting on the employer's own careers page
+        return True
     segs = [s for s in parts.path.lower().split("/") if s]
     if segs and re.fullmatch(r"[a-z]{2}(-[a-z]{2})?", segs[0]):  # language prefix /en/, /de-de/
         segs = segs[1:]

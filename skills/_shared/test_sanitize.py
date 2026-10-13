@@ -4,7 +4,7 @@ import sys
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sanitize import _signal_is_valid, email_owner_score, sanitize_rows, wrong_person_emails
+from sanitize import _signal_is_valid, email_owner_score, is_article_url, sanitize_rows, wrong_person_emails
 
 assert email_owner_score("Karl Horst", "khorst@acme-bau.de") == 2
 assert email_owner_score("Bernd Baum", "khorst@acme-bau.de") == 0
@@ -71,5 +71,8 @@ for age, kept in ((59, 1), (60, 1), (61, 0)):
     clean, _ = sanitize_rows([{"full_name": "Eva Echt", "scored_signals": [sig]}], require_email=False,
                              drop_empty=False, max_signal_age_days=60, today=today)
     assert len(clean[0]["scored_signals"]) == kept, (age, clean)
+
+# A Greenhouse posting embedded on the employer's careers page is the item; the careers page alone is a listing.
+assert is_article_url("https://acme.com/careers?gh_jid=123") and not is_article_url("https://acme.com/careers")
 
 print("ok")
