@@ -43,7 +43,9 @@ INTERNAL_PREFIXES = ("fe_", "bc_", "pipe0_", "_", "provider_", "raw_")
 EMAIL_POLICIES = {
     # default: keep deliverable, high-probability, and catch-all (usually usable on
     # corporate domains); drop unknown/risky/invalid/undeliverable.
-    "standard": {"DELIVERABLE", "VALID", "HIGH_PROBABILITY", "CATCH_ALL", "ACCEPT_ALL"},
+    # PUBLISHED: the verifier said unknown, but the organisation's own site prints the address next to
+    # the person's name (set by hand, gtm-demo Step 5). Shown as published, never as verified.
+    "standard": {"DELIVERABLE", "VALID", "HIGH_PROBABILITY", "CATCH_ALL", "ACCEPT_ALL", "PUBLISHED"},
     # strict: also drop catch-all.
     "strict": {"DELIVERABLE", "VALID", "HIGH_PROBABILITY"},
     # lenient: any non-empty email, whatever the status.

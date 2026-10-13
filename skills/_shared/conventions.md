@@ -227,7 +227,9 @@ it) is sanitized by **`_shared/sanitize.py`** — a deterministic, no-LLM step e
 applies before producing the deliverable:
 
 - **Drop bad emails** — keep only allowed deliverability statuses (default policy `standard`:
-  Deliverable + High-probability + Catch-all; `strict` also drops catch-all). The real
+  Deliverable + High-probability + Catch-all + `published`; `strict` also drops catch-all and
+  `published`). `published` is set by hand only, for an unknown verdict that the organisation's own
+  site prints next to the person's name (gtm-demo Step 5). The real
   anti-"made-up-address" guard is the upstream **domain-identity cross-check** (people-enrichment):
   a `DELIVERABLE` email on a domain that isn't the target's is a wrong-company hit — drop it.
 - **Drop stale/sourceless signals** — per Signal Quality above.

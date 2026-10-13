@@ -1,4 +1,5 @@
-"""The signal freshness window counts calendar days. python3 test_sanitize.py"""
+"""The signal freshness window counts calendar days; a published address ships under standard only.
+python3 test_sanitize.py"""
 import os
 import sys
 from datetime import datetime, timedelta
@@ -12,4 +13,9 @@ for age, kept in ((59, 1), (60, 1), (61, 0)):
     clean, _ = sanitize_rows([{"full_name": "Eva Echt", "email": "eva@acme.de", "email_status": "valid",
                                "scored_signals": [sig]}], drop_empty=False, max_signal_age_days=60, today=today)
     assert len(clean[0]["scored_signals"]) == kept, (age, clean)
+
+# an address the organisation itself prints next to the name ships as `published`, but not under strict
+pub = [{"full_name": "Pia Amt", "email": "pia.amt@city.example", "email_status": "published"}]
+assert sanitize_rows(pub, drop_empty=False)[0][0]["email"] == "pia.amt@city.example"
+assert sanitize_rows(pub, email_policy="strict", drop_empty=False)[0] == []
 print("ok")

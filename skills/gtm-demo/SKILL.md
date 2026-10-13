@@ -120,6 +120,15 @@ Scott Clay, or a page that pairs the name and the address, such as the company's
 otherwise drop it from both. A contact that loses its address keeps its card, LinkedIn draft only,
 with the `est-warn` badge.
 
+**An address the organisation publishes itself.** Public-sector mail servers often don't answer a
+verifier's check, so the address comes back unknown. When the organisation's **own** website or own
+document (staff page, org chart, imprint, its own PDF) prints that exact address next to that
+person's name, keep it with `email_status` `published` and write that page's URL into
+`email_source`. Example: a city's IT head whose address is printed on the city's staff page. Only
+for an unknown verdict: never for an invalid one, never for a pattern or format guess, never from a
+third-party source (a directory, a data provider, an article on another site). The deck shows it
+with its own badge and never as verified (Step 7b).
+
 Additional enrichment for message personalization (if available):
 - LinkedIn headline and summary (from LinkedIn scrape via PhantomBuster)
 - Recent LinkedIn posts (2–3 per contact) — significantly improves message quality
@@ -283,7 +292,7 @@ clean, report = sanitize_rows(rows, email_policy="standard", max_signal_age_days
 # report → rows_dropped_bad_email, signals_dropped, columns_dropped, messages_trimmed
 ```
 
-It drops bad-status emails (default keeps Deliverable/High-prob/Catch-all), strips provider/source
+It drops bad-status emails (default keeps Deliverable/High-prob/Catch-all/`published`), strips provider/source
 labels + internal status codes, removes all-empty columns, drops stale/sourceless signals, and
 enforces message length + em-dash rules. See `conventions.md` → Output Sanitization. Write the
 result to `csv/output/`.
@@ -303,9 +312,13 @@ result to `csv/output/`.
    - Each card = collapsible `<details class="lead">`: favicon, company + domain, attribute tags
      (`tag-sig`/`tag-icp` + language `tag-lang`), the signal/fit box, the contact with
      LinkedIn + email (`{{CONTACT_LABEL}}` says what the evidence supports, e.g. "Spirits buyer" or
-     "Partner"; "Decision-maker" only when the person is one) and a deliverability badge (`est-ok` = verified email, `est-warn`
+     "Partner"; "Decision-maker" only when the person is one) and a deliverability badge (`est-ok` = verified email,
+     `est-pub` "published on their website" / "auf der Website veröffentlicht" for a `published` address,
+     never a verified claim, `est-warn`
      "on request" when no email — in that case **drop the email draft, keep only the LinkedIn
      draft**), and the message draft (email subject + body, then LinkedIn) with an A/B `cta-chip`.
+     With any `published` address, the email stat tile counts "email addresses" / "E-Mail-Adressen",
+     not checked or verified ones, and the method note must not say every address was checked.
    - **List bar** carries a **Download-CSV button** (`.dl`) beside the Expand-all toggle; the
      footer carries a **big CTA button** (`.cta-btn`) linking to the sending brand's booking URL
      (`{{CALENDAR_URL}}` — ask for it, or leave the token if unknown).
@@ -342,7 +355,8 @@ every signal card has a live source link + date; every card, signal cards too, h
 em-dashes; one email + one LinkedIn draft per verified-email card (LinkedIn-only for `est-warn`
 cards) within char caps. **No third-party tool / data-provider name** appears in the rendered text
 (grep the visible copy for enrichment/search/scrape vendor names — none allowed; the lead's own
-LinkedIn link is the only exception). **No address may appear on two cards** (Step 5). **No zero
+LinkedIn link is the only exception). **No address may appear on two cards** (Step 5). **Only a
+verified address's badge says verified:** a `published` address carries `est-pub`. **No zero
 signal count** ("0 … signal") in the visible text. **German decks use Du-form** — flag any `Sie/Ihr/Ihnen`
 formal-address forms. **Hero is tight** — `{{HERO_HEADLINE}}` ≤ ~7 words and `{{HERO_INTRO}}` ≤ 2
 sentences with no pipeline/sourcing detail. Also assert the deck's plumbing survived templating: the
