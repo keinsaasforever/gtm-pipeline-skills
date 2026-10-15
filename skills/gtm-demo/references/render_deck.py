@@ -102,7 +102,7 @@ tokens = {
     "LBL_DOWNLOAD": L["download"], "LBL_EXPAND": L["expand"], "LBL_COLLAPSE": L["collapse"],
     "METHOD_NOTE": cfg["method_note"], "FOOTER_HEADLINE": cfg["footer_headline"], "FOOTER_BODY": cfg["footer_body"],
     "CTA_LABEL": cfg["cta_label"], "FOOTER_META": cfg["footer_meta"], "CSV_FILENAME": f'{cfg["client_slug"]}_prospects.csv',
-    "CALENDAR_URL": "https://calendar.google.com/calendar/appointments/schedules/AcZssZ3kHmy2kw6fePg6tqmkoaFnj8AKGN2Baq3rRyfo4ItozAv2BfXF3Gh2-oMjYDxWIc7P_hEfMZTi",
+    "CALENDAR_URL": "https://calendar.app.google/QaGdhyiK6AQ8bsjy9",
 }
 page = re.sub(r"<!--.*?-->\n?", "", page, flags=re.S)  # template authoring notes stay out of the deliverable
 page = page.replace('"{{CSV_DATA}}"', json.dumps(csv_text, ensure_ascii=False).replace("</", "<\\/"))
