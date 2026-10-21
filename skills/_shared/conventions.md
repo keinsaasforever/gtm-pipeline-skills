@@ -284,6 +284,7 @@ Each line is exported as it stands, so a value with spaces stays whole; keep val
 | `PHANTOMBUSTER_API_KEY` | PhantomBuster | company-enrichment (SN scraper), people-search (employees), outreach |
 | `LINKEDIN_SESSION_COOKIE` | LinkedIn li_at cookie | all PhantomBuster agents |
 | `LINKEDIN_USER_AGENT` | Browser user agent | all PhantomBuster agents |
+| `VEXA_API_KEY` | Vexa (meeting bot, transcripts) | call-transcripts, live-assist (optional; `VEXA_API_URL` for self-hosted) |
 
 Other credentials (Firecrawl, Stripe) are requested when the corresponding skill runs. `OPENROUTER_API_KEY` is **legacy/optional** — needed only for `signal_search.py --llm-backend openrouter`; the default `agent` path needs no LLM key (see Model Routing).
 

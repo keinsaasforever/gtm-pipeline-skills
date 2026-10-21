@@ -1,6 +1,6 @@
 # GTM Pipeline Skills
 
-Ten Claude Code skills for building efficient B2B lead generation pipelines — from company discovery to enriched contacts ready for outreach. Using these get you Clay quality data for 10-20% of the price.
+Seventeen Claude Code skills for B2B sales: ten for building lead generation pipelines (from company discovery to enriched contacts ready for outreach), and seven for revenue intelligence on the deals you already have (meeting prep, CRM updates and follow-ups from call transcripts, live call assist, daily plan, deal health). Using these get you Clay quality data for 10-20% of the price.
 
 Each skill is a standalone Markdown instruction file that Claude reads and executes as an agent. Use them individually or chain them into a full pipeline.
 
@@ -40,6 +40,20 @@ The setup skill walks you through API keys, PhantomBuster agent IDs (auto-looked
 | `/gtm-pipeline:outreach` | Run LinkedIn connection requests and messages via PhantomBuster |
 | `/gtm-pipeline:demo` | Generate a demo lead list (~10 contacts + messages) from an ICP description |
 
+### Revenue intelligence
+
+These work on the user's own connected tools (CRM, mail, calendar, meeting transcripts, team chat). Their steps need no local files, scripts or API keys, so they can run in claude.ai/Cowork and ChatGPT as well as Claude Code. For those hosts they need packaging as a plugin that bundles `_shared/revenue.md`; today they install like the others, via `install.sh`. Vexa is optional. Shared rules: `skills/_shared/revenue.md`. Routines: `docs/ROUTINES.md`.
+
+| Skill | What It Does |
+|-------|-------------|
+| `/gtm-pipeline:revenue-setup` | Sales playbook: stages and exit criteria, CRM field standards and write modes, method, follow-up style, transcript source |
+| `/gtm-pipeline:call-transcripts` | Find a call transcript (notetaker, Google Meet, Teams, Zoom, Drive) or record one with a Vexa bot (fallback) |
+| `/gtm-pipeline:meeting-prep` | One-page brief before a meeting: deal status, open commitments, news, gaps and questions to ask |
+| `/gtm-pipeline:post-call` | CRM updates under the playbook's write rules, next-step tasks, follow-up email as a draft, change log |
+| `/gtm-pipeline:live-assist` | In-call coaching from the live Vexa transcript: open questions, gaps, objection answers |
+| `/gtm-pipeline:daily-plan` | Today's meetings and the 5–10 actions that matter, ranked |
+| `/gtm-pipeline:deal-review` | Momentum score and source-backed risks per deal, one action each |
+
 ---
 
 ## Pipeline Architecture
@@ -75,6 +89,7 @@ Copy `.env.example` to your env file and fill in:
 | `OPENROUTER_API_KEY` | openrouter.ai | Per token |
 | `PHANTOMBUSTER_API_KEY` | phantombuster.com | Plan-based |
 | `BETTERCONTACT_API_KEY` | bettercontact.rocks | Per enrichment (optional) |
+| `VEXA_API_KEY` | vexa.ai (or self-hosted) | Per bot hour (optional, revenue-intelligence transcripts in Claude Code) |
 
 You don't need all of them. See `/gtm-pipeline:setup` — it only asks for what your use case requires.
 
