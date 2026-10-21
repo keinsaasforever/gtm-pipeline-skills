@@ -1,10 +1,16 @@
 # GTM Pipeline — Architecture
 
+The plugin has two families of skills:
+- **Prospecting** (this document): find and rank prospects, then hand them to Sales Agent.
+- **Revenue intelligence** (`shared/revenue.md`, `docs/ROUTINES.md`): work on existing deals through the user's own connectors.
+
+Work emails, phone numbers and outreach are not part of the plugin. They run in keinsaas Sales Agent, connected through the bundled `sales-agent` connector or a CSV import.
+
 ## Two Workflows
 
 ### Company-First (Finite Markets)
 
-Use when you have a company list, a known industry, or a Sales Navigator search.
+Use when you have a company list or a known, bounded industry.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -12,13 +18,13 @@ Use when you have a company list, a known industry, or a Sales Navigator search.
 └─────────────────────────────────────────────────────────────────────┘
 
  ┌──────────────────┐
- │  company-search  │  Providers: Sales Navigator + PB, Parallel FindAll,
- │                  │  Firecrawl Agent, web scraping
+ │  company-search  │  Providers: Parallel FindAll, Firecrawl Agent,
+ │                  │  Pipe0 searches, web scraping
  └────────┬─────────┘
           │ csv/input/companies_raw.csv
           ▼
  ┌──────────────────────┐
- │  company-enrichment  │  Phase 1: Enrich (PB SN Scraper, Parallel, SimilarWeb,
+ │  company-enrichment  │  Phase 1: Enrich (Parallel Task Group, SimilarWeb,
  │                      │  Firecrawl, SerpAPI)
  │                      │  Phase 2: ICP scoring → icp_score 0–100
  └────────┬─────────────┘
@@ -31,15 +37,15 @@ Use when you have a company list, a known industry, or a Sales Navigator search.
  ┌─────────────────┐              ┌──────────────────┐
  │  signal-search  │              │  people-search   │
  │                 │  (parallel   │                  │
- │  4 sources:     │   or         │  company mode:   │
+ │  sources:       │   or         │  company mode:   │
  │  - Parallel web │   sequential)│  find contacts   │
  │  - Firecrawl    │              │  at companies    │
  │  - Parallel     │              │                  │
  │    enrichment   │              │  persona mode:   │
- │  - PB Jobs      │              │  no company list │
+ │  - job feeds    │              │  no company list │
  └────────┬────────┘              └────────┬─────────┘
           │ csv/intermediate/signals.csv   │ csv/intermediate/contacts_found.csv
-          │ (used as outreach context)     │
+          │ (message context)              │
           │                               ▼
           │                    ┌──────────────────┐
           │                    │  contact-filter  │  Rank by job tier, industry tier,
@@ -48,16 +54,10 @@ Use when you have a company list, a known industry, or a Sales Navigator search.
           │                    └────────┬─────────┘
           │                             │ csv/intermediate/contacts_filtered.csv
           │                             ▼
-          │                    ┌──────────────────────┐
-          │                    │  people-enrichment   │  Email waterfall: FE → Pipe0
-          │                    │                      │  Phone: BetterContact → FE
-          │                    └────────┬─────────────┘
-          │                             │ csv/output/contacts_enriched.csv
-          │                             ▼
-          └──────────────────► ┌─────────────────┐
-                               │    outreach     │  LinkedIn connections + messages
-                               │                 │  via PhantomBuster
-                               └─────────────────┘
+          └──────────────────► ┌─────────────────────────┐
+                               │  Sales Agent (hand-off)  │  Verified work emails,
+                               │  connector or CSV import │  outreach
+                               └─────────────────────────┘
 ```
 
 ---
@@ -73,7 +73,7 @@ Use when you have no company list — discover companies based on buying behavio
 
  ┌─────────────────────────────┐
  │  signal-search (discovery)  │  FindAll by signal criteria, Firecrawl Agent,
- │                             │  LinkedIn Job Exporter, Exa Websets (via Pipe0)
+ │                             │  job boards, Exa Websets (via Pipe0)
  └─────────────────┬───────────┘
                    │ csv/input/companies_raw.csv  (raw company names from signals)
                    ▼
@@ -94,14 +94,9 @@ Use when you have no company list — discover companies based on buying behavio
           └────────┬─────────┘
                    │
                    ▼
-          ┌──────────────────────┐
-          │  people-enrichment   │
-          └────────┬─────────────┘
-                   │
-                   ▼
-          ┌─────────────────┐
-          │    outreach     │
-          └─────────────────┘
+          ┌─────────────────────────┐
+          │  Sales Agent (hand-off)  │
+          └─────────────────────────┘
 ```
 
 ---
@@ -113,10 +108,10 @@ Use when you have no company list — discover companies based on buying behavio
 | `csv/input/companies_raw.csv` | company-search | company-enrichment |
 | `csv/intermediate/companies_enriched.csv` | company-enrichment Phase 1 | ICP scoring (Phase 2) |
 | `csv/intermediate/companies_scored.csv` | company-enrichment Phase 2 | signal-search, people-search |
-| `csv/intermediate/signals.csv` | signal-search | outreach (context) |
+| `csv/intermediate/signals.csv` | signal-search | message context (demo) |
 | `csv/intermediate/contacts_found.csv` | people-search | contact-filter |
-| `csv/intermediate/contacts_filtered.csv` | contact-filter | people-enrichment |
-| `csv/output/contacts_enriched.csv` | people-enrichment | outreach |
+| `csv/intermediate/contacts_filtered.csv` | contact-filter | Sales Agent (import) |
+| `csv/output/contacts.csv` | demo | the deck, Sales Agent (import) |
 
 ---
 
@@ -127,19 +122,17 @@ The pipeline has natural checkpoints where credits are spent. Review output qual
 ```
 company-search          ← credits: Parallel FindAll or Pipe0 searches
         ↓
-company-enrichment      ← credits: PB SN scrape (free w/ plan), or Parallel (~$0.025–0.05/row)
+company-enrichment      ← credits: Parallel (~$0.025–0.05/row), optional SimilarWeb
         ↓
 [ICP gate icp_score ≥ 70]  ← saves downstream credits (signal-search, people-search)
         ↓
-signal-search           ← credits: Parallel web search + enrichment, Firecrawl, OpenRouter
+signal-search           ← credits: Parallel web search + enrichment, Firecrawl
         ↓
-people-search           ← credits: Pipe0, PB scrape, BC Lead Finder, FE Finder
+people-search           ← credits: FE Finder, BC Lead Finder, Pipe0
         ↓
 contact-filter          ← no API cost — local classification only
         ↓
-people-enrichment       ← credits: FullEnrich (~$0.10–0.30/email), BetterContact (phone)
-        ↓
-outreach                ← LinkedIn plan quota (no API cost per message)
+Sales Agent             ← email verification and outreach, charged in Sales Agent credits
 ```
 
 ---
@@ -148,25 +141,24 @@ outreach                ← LinkedIn plan quota (no API cost per message)
 
 | Skill | Recommended Provider | Alternative |
 |-------|---------------------|-------------|
-| Company search | Parallel FindAll | Sales Nav + PB, Firecrawl Agent |
-| Company enrichment | PB SN Account Scraper | Parallel enrichment |
-| ICP scoring | Any LLM via OpenRouter | Claude directly |
+| Company search | Parallel FindAll | Firecrawl Agent, Pipe0 |
+| Company enrichment | Parallel Task Group | SimilarWeb (Apify), Firecrawl |
+| ICP scoring | Claude (in-context) | — |
 | Signal web search | Parallel (processor: pro) | SerpAPI |
 | Website crawl | Firecrawl | — |
-| People search | Pipe0 | PB Employee Finder, BC Lead Finder, FE Finder |
-| Email enrichment | FullEnrich | Pipe0 |
-| Phone enrichment | BetterContact | FullEnrich |
-| LinkedIn automation | PhantomBuster | — |
+| People search | FullEnrich Finder | BetterContact Lead Finder, Pipe0 |
+| Emails, phones, outreach | Sales Agent | — |
 
 ---
 
 ## Shared Files
 
-All skills read from `~/.claude/skills/gtm-pipeline/_shared/`:
+All skills read from `${CLAUDE_PLUGIN_ROOT}/shared/`:
 
 | File | Purpose |
 |------|---------|
 | `conventions.md` | Field names (snake_case), terminology, provider disambiguation |
-| `phantombuster.md` | PB API patterns, agent config key reference, load_env helper |
-| `local.md` | Personal config — PB agent IDs, GTM_ENV_PATH (gitignored) |
-| `local.example.md` | Template to copy when setting up |
+| `revenue.md` | Rules for the revenue-intelligence skills (copied into their `references/`) |
+| `resolve_env.sh` | Finds the API key file (`GTM_ENV_PATH` or `~/.env.gtm`) |
+| `sanitize.py` | Deterministic output sanitizer for lead-facing files |
+| `deploy/` | Headless demo runner |

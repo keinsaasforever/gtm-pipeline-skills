@@ -1,0 +1,15 @@
+{
+  "name": "keinsaas-gtm",
+  "description": "keinsaas sales skills for Claude: prospecting and revenue intelligence.",
+  "owner": {
+    "name": "keinsaas",
+    "url": "https://www.keinsaas.com"
+  },
+  "plugins": [
+    {
+      "name": "gtm-pipeline",
+      "source": "./",
+      "description": "Prospecting and revenue-intelligence skills for B2B sales teams."
+    }
+  ]
+}

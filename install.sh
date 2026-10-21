@@ -1,53 +1,43 @@
 #!/usr/bin/env bash
-# install.sh — Symlink GTM pipeline skills into ~/.claude/skills/
+# install.sh — Install the gtm-pipeline plugin into Claude Code from this checkout.
+#
+# The skills ship as a Claude Code plugin now. Most people don't need this script:
+#   claude plugin marketplace add keinsaasforever/gtm-pipeline-skills
+#   claude plugin install gtm-pipeline@keinsaas-gtm
+# In claude.ai or Cowork: Customize > Plugins > add the GitHub repository.
+#
+# This script installs from the local checkout instead (for contributors), and removes
+# the symlinks that earlier versions created in ~/.claude/skills/.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILLS_SRC="$REPO_DIR/skills"
-SKILLS_DST="$HOME/.claude/skills"
+OLD_DST="$HOME/.claude/skills"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-RED='\033[0;31m'
 NC='\033[0m'
 
-echo "GTM Pipeline Skills — Install"
-echo "Source: $SKILLS_SRC"
-echo "Target: $SKILLS_DST"
+echo "GTM Pipeline — Install (plugin)"
 echo ""
 
-# Ensure ~/.claude/skills exists
-mkdir -p "$SKILLS_DST"
-
-# Symlink each gtm-* directory
-# Note: _shared is a relative symlink inside skills/gtm-pipeline/ (committed to repo)
-# so it resolves automatically — no separate symlink needed here.
-for skill_dir in "$SKILLS_SRC"/gtm-*; do
-  name="$(basename "$skill_dir")"
-  dst="$SKILLS_DST/$name"
-
-  if [[ -L "$dst" ]]; then
-    echo -e "${YELLOW}  skip${NC}   $name (already symlinked)"
-  elif [[ -d "$dst" ]]; then
-    echo -e "${RED}  conflict${NC} $name — real directory exists at $dst"
-    echo "           To replace it: rm -rf \"$dst\" && ./install.sh"
-  else
-    ln -s "$skill_dir" "$dst"
-    echo -e "${GREEN}  linked${NC}  $name"
-  fi
-done
-
-# Create local.md from example if it doesn't exist
-LOCAL_MD="$SKILLS_SRC/_shared/local.md"
-LOCAL_EXAMPLE="$SKILLS_SRC/_shared/local.example.md"
-if [[ ! -f "$LOCAL_MD" ]]; then
-  if [[ -f "$LOCAL_EXAMPLE" ]]; then
-    cp "$LOCAL_EXAMPLE" "$LOCAL_MD"
-    echo ""
-    echo -e "${GREEN}  created${NC} _shared/local.md from local.example.md"
-    echo "           Fill in your PhantomBuster agent IDs and GTM_ENV_PATH."
-  fi
+# Earlier versions symlinked skills/gtm-* into ~/.claude/skills/. Those would load
+# next to the plugin as duplicates, so remove them (symlinks only).
+if [[ -d "$OLD_DST" ]]; then
+  for link in "$OLD_DST"/gtm-*; do
+    [[ -L "$link" ]] || continue
+    rm "$link"
+    echo -e "${YELLOW}  removed${NC} old symlink $(basename "$link")"
+  done
 fi
 
+if ! command -v claude >/dev/null 2>&1; then
+  echo "Claude Code CLI not found. Install it, then run this script again." >&2
+  exit 1
+fi
+
+claude plugin marketplace add "$REPO_DIR"
+claude plugin install gtm-pipeline@keinsaas-gtm
+
 echo ""
-echo "Done. Run /gtm-pipeline:setup in Claude Code to finish configuration."
+echo -e "${GREEN}Done.${NC} Start Claude Code and run /gtm-pipeline:setup."
+echo "API keys go in ~/.env.gtm (or export GTM_ENV_PATH). See .env.example."
