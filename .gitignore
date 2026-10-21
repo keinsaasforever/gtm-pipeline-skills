@@ -1,6 +1,3 @@
-# Personal config (agent IDs, env paths)
-skills/_shared/local.md
-
 # macOS
 .DS_Store
 
@@ -16,3 +13,6 @@ skills/_shared/local.md
 # Python
 __pycache__/
 *.pyc
+
+# Plugin MCP bundle cache
+.mcpb-cache/

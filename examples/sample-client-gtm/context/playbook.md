@@ -1,6 +1,6 @@
 # Flowline — Sales Playbook
 
-> Fictional example company. This is the format `gtm-pipeline:revenue-setup` writes to `context/playbook.md`, and the file the revenue-intelligence skills read (see `skills/_shared/revenue.md`).
+> Fictional example company. This is the format `gtm-pipeline:revenue-setup` writes to `context/playbook.md`, and the file the revenue-intelligence skills read (see `shared/revenue.md`).
 
 ```yaml
 version: 3

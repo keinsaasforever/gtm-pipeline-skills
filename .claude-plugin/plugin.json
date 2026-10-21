@@ -1,0 +1,14 @@
+{
+  "name": "gtm-pipeline",
+  "displayName": "GTM Pipeline",
+  "version": "0.2.0",
+  "description": "B2B sales skills: build prospect lists (company search, ICP scoring, buying signals, people search, contact ranking, demo) and run revenue intelligence on existing deals (meeting prep, CRM updates and follow-up drafts from call transcripts, live call assist, daily plan, deal review). Email verification and outreach run through the keinsaas Sales Agent connector.",
+  "author": {
+    "name": "keinsaas",
+    "url": "https://www.keinsaas.com"
+  },
+  "homepage": "https://github.com/keinsaasforever/gtm-pipeline-skills",
+  "repository": "https://github.com/keinsaasforever/gtm-pipeline-skills",
+  "license": "MIT",
+  "keywords": ["sales", "gtm", "prospecting", "crm", "meeting-prep", "revenue-intelligence"]
+}

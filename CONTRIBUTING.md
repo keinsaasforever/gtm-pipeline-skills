@@ -30,33 +30,35 @@ PRs are reviewed before merging. The `stable` branch is the maintainer's product
 
 ### Skill Files
 
-- Each skill lives in `skills/gtm-{name}/SKILL.md`
-- Follow the YAML frontmatter format:
+- Each skill lives in `skills/{name}/SKILL.md` (lowercase, hyphens)
+- Follow the YAML frontmatter format. `name` must equal the folder name; the plugin adds the `gtm-pipeline:` prefix:
   ```yaml
   ---
-  name: gtm-pipeline:{skill-name}
-  description: One-line description. Trigger phrases at the end.
+  name: {skill-name}
+  description: What it does and when to use it. Trigger phrases at the end. Max 1024 characters.
   ---
   ```
-- Reference shared files with `~/.claude/skills/gtm-pipeline/_shared/conventions.md`
-- Use snake_case for all CSV field names (see `_shared/conventions.md` for canonical names)
+- Reference shared files with `${CLAUDE_PLUGIN_ROOT}/shared/conventions.md`
+- Use snake_case for all CSV field names (see `shared/conventions.md` for canonical names)
 
 ### No Personal Data
 
 Never commit:
 - API keys, session cookies, or secrets
-- PhantomBuster agent IDs (these go in `_shared/local.md`, which is gitignored)
-- Absolute paths (use `~/.claude/skills/...` or `$HOME`)
+- Absolute paths (use `${CLAUDE_PLUGIN_ROOT}/...` for plugin files, `$HOME` for user files)
 - Client names, domains, or real contact data
 - Your name or identifying information
 
-If a skill needs user-specific config, reference `_shared/local.md` with a config key.
+If a skill needs user-specific config, use an environment variable in `~/.env.gtm` and document it in `.env.example`.
+
+### Scope
+
+Email and phone enrichment, LinkedIn automation and sending (email or LinkedIn) run in keinsaas Sales Agent, not in this plugin. Don't add them to a skill.
 
 ### Shared Files
 
-- `_shared/conventions.md` — field naming, terminology, directory structure
-- `_shared/phantombuster.md` — PB API patterns and script templates
-- `_shared/local.example.md` — template for personal config (update if you add new config keys)
+- `shared/conventions.md` — field naming, terminology, directory structure
+- `shared/revenue.md` — rules for the revenue-intelligence skills. After editing, run `scripts/sync-shared.sh`.
 
 ### Examples
 
@@ -67,11 +69,12 @@ If your change affects the expected project structure, update `examples/sample-c
 ## Testing Your Changes
 
 ```bash
-# Install skills from your fork
-./install.sh
+# Validate the plugin
+claude plugin validate --strict .
+scripts/sync-shared.sh --check
 
-# Open a project in Claude Code
-claude .
+# Load your checkout for one session (or ./install.sh to install it)
+claude --plugin-dir .
 
 # Invoke the skill you changed
 /gtm-pipeline:{skill-name}
@@ -79,7 +82,7 @@ claude .
 
 Verify:
 - The skill runs without referencing missing files
-- Field names match `_shared/conventions.md`
+- Field names match `shared/conventions.md`
 - No hardcoded paths, IDs, or personal data
 - Existing skills that reference your changed skill still work
 

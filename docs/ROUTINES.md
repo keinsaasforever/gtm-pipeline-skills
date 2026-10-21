@@ -6,7 +6,7 @@ These skills work on demand. Routines make them run by themselves. Each routine 
 
 | Host | How | Can it use the user's connectors and skills? |
 |---|---|---|
-| **Claude: scheduled tasks** (claude.ai/code/routines, or `/schedule` in Claude Code) | Schedule, API call, or GitHub event. Add this repo as the task's repository so its skills load, and add the CRM, mail, calendar, chat and transcript connectors. | Yes, per Anthropic's docs: "Scheduled tasks can use your connected MCP connectors… All of your connected MCP connectors are included by default." Runs don't stop for approval, so the write gates in `skills/_shared/revenue.md` are what keeps them safe. |
+| **Claude: scheduled tasks** (claude.ai/code/routines, or `/schedule` in Claude Code) | Schedule, API call, or GitHub event. Add this repo as the task's repository so its skills load, and add the CRM, mail, calendar, chat and transcript connectors. | Yes, per Anthropic's docs: "Scheduled tasks can use your connected MCP connectors… All of your connected MCP connectors are included by default." Runs don't stop for approval, so the write gates in `shared/revenue.md` are what keeps them safe. |
 | **Claude: scheduled tasks in claude.ai chat** | The same dialog without a repository | Connectors yes. Skills only if installed in the account (as a plugin or uploaded skill). |
 | **ChatGPT** | Scheduled tasks | **Not verified** whether scheduled tasks can use connected apps and skills. Test before relying on it. |
 
@@ -41,7 +41,7 @@ The hourly sweep means a follow-up draft can be up to an hour late. To process a
 2. A tiny relay verifies Vexa's signature and calls the scheduled task's **API trigger** (`POST …/routines/{id}/fire`).
 3. The task runs `post-call` for that one meeting.
 
-A relay is needed because Vexa signs its requests with an HMAC (`X-Webhook-Signature`) and sends its own JSON. The fire endpoint instead expects `Authorization: Bearer <task token>` and a body `{"text": "..."}`. Any small function works: an n8n webhook node, a Cloudflare Worker, a Vercel function, or a route on our MCP server later.
+A relay is needed because Vexa signs its requests with an HMAC (`X-Webhook-Signature`) and sends its own JSON. The fire endpoint instead expects `Authorization: Bearer <task token>` and a body `{"text": "..."}`. Any small function works: a Cloudflare Worker, a Vercel function, or a route on the Sales Agent MCP server later.
 
 **Relay logic:**
 1. Recompute `sha256=HMAC(webhook_secret, "<X-Webhook-Timestamp>." + raw_body)` and compare it in constant time with `X-Webhook-Signature`. Reject requests older than 5 minutes.
