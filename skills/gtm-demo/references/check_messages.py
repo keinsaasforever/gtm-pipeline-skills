@@ -1,14 +1,29 @@
 """Check csv/intermediate/messages.json against the message rules before building anything.
 python3 check_messages.py   (from {client-slug}-gtm/) — prints CLEAN or the list of problems, then any "why they fit"
 over ~200 characters (SKILL.md Step 7b, deck copy) as a warning."""
+import os
 import re
 from collections import Counter
-from common import contacts, deck_config, has_address, messages
+from common import contacts, deck_config, has_address, messages, signals
 
 cfg, msgs, errs, warns, hooks = deck_config(), messages(), [], [], []
 INFORMAL = re.compile(r"\b(du|dich|dir|dein\w*|euch|euer\w*)\b", re.I)
 FORMAL = re.compile(r"(?<=[a-zäöüß,] )(Sie|Ihnen|Ihre?[mnrs]?)\b")  # mid-sentence only: a capital at sentence start can be "they"
 BANNED = re.compile(r"linkedin|phantom|fullenrich|pipe0|bettercontact|kitt|firecrawl|gefunden|revolution|gamechanger", re.I)
+# the hook says what a signal means for them, never the signal itself (Step 6): a hook that names a job ad, or whose
+# words are mostly its signal's summary, restates it
+HIRING = re.compile(r"\b(is|are)\s+hiring\b|\bhiring an?\b|\bsuch(t|en|st)\b(\s+\S+){0,3}?\s+(eine?[nrs]?|Verstärkung)\b", re.I)
+WORD = re.compile(r"[^\W\d_]{4,}")
+FILLER = {"wenn", "eine", "einen", "einer", "eines", "dass", "auch", "sind", "ihre", "ihren", "ihrer", "ihnen", "gerade",
+          "with", "that", "this", "your", "their", "from", "have", "when", "just"}
+
+
+def restates(hook, summary):
+    words = {w.lower() for w in WORD.findall(hook)} - FILLER
+    return len(words) >= 4 and len(words & {w.lower() for w in WORD.findall(summary)}) >= len(words) / 2
+
+
+sigs = signals() if os.path.exists("csv/intermediate/signals.csv") else {}
 # a first message never asks for a call or meeting (Step 6): the CTA offers something free instead
 CALL_ASK = re.compile(r"\b(termin\w*|telefon\w*|gespräch\w*|austausch|meeting\w*|call|calls|zoom|kurz sprechen|hop on|jump on)\b", re.I)
 for c in contacts():
@@ -16,7 +31,7 @@ for c in contacts():
     m = msgs.get(key)
     if not m:
         errs.append(f"{who}: no message"); continue
-    lang, reg = m["lang"].lower(), m.get("register", "")
+    lang, reg, first_hook = m["lang"].lower(), m.get("register", ""), len(hooks)
     text = " ".join(str(v) for k, v in m.items() if k not in ("why_they_fit", "job_title"))
     names = {c["last_name"].strip(), c["first_name"].strip()}
     for k in ("li_p1", "email_p1"):
@@ -54,6 +69,10 @@ for c in contacts():
         hooks.append(("email", hook))
     elif m.get("email_subject") or m.get("email_p1"):
         errs.append(f"{who}: email draft on a card without a kept address")
+    summary = (sigs.get(c["company_domain"]) or {}).get("summary", "")
+    for ch, h in hooks[first_hook:]:
+        if HIRING.search(h): errs.append(f"{who}: {ch} hook names a job ad '{HIRING.search(h).group()}'; say what it means for them")
+        elif summary and restates(h, summary): errs.append(f"{who}: {ch} hook restates the signal; say what it means for them")
 for ch in ("email", "li"):
     for p, n in Counter(" ".join(h.split()[:3]) for c_, h in hooks if c_ == ch).items():
         if n > 2: errs.append(f"{ch} opening '{p}' used {n}x")

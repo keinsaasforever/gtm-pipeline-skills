@@ -9,10 +9,14 @@ This file is gitignored — your keys and agent IDs stay on your machine.
 
 ```
 GTM_ENV_PATH=/Users/YOUR_USERNAME/.env.gtm
+GTM_BASE_RULES=/path/to/base-rules.json
 ```
 
 Set this to the path of your `.env` file containing API keys.
 Default if not set: `~/.env.gtm`
+
+`GTM_BASE_RULES` (optional): your base message rules as a JSON file of rule texts. gtm-demo Step 6 reads it and
+its rules win over the skill's own. Leave it out to use the skill's rules.
 
 ---
 

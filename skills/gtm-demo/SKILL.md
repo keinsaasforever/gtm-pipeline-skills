@@ -459,7 +459,7 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 
 | Part | Purpose | Length |
 |------|---------|--------|
-| Hook | Reference something specific to this person (post, career move, company signal) | 1 sentence |
+| Hook | What something specific to this person means for them (a kept signal's consequence, their own post), never the signal itself | 1 sentence |
 | Bridge | Connect their situation to your offer | 1 sentence |
 | Offer | What you provide, clearly stated | 1 sentence |
 | CTA | A yes/no question that offers something free for a one-word reply. Never a call | 1 sentence |
@@ -468,8 +468,24 @@ Every message must follow: **Hook → Bridge → Offer → Soft CTA**
 
 ### Quality Rules
 
+**Base rules first.** When `_shared/local.md` sets `GTM_BASE_RULES` (the path to the operator's base message rules,
+a JSON file of rule texts), read that file before writing the message prompt and carry every rule into
+`prompts/message_prompt.md`. Its rules win over this section where the two differ, and no client wish switches
+them off. Without it, the rules below apply as written. One home for the rules means a rule change reaches the
+demos without editing this skill.
+
+**The hook says what the signal means for them, never the signal itself.** The prospect knows their own news, job
+ads and new role. A draft that states them back ("X hat im September die neue Marke vorgestellt", "X sucht gerade
+einen Eventmanager", "since October you lead sales") reads machine-written, and the deck prints the signal right
+next to the draft, so the repeat is the first thing the reader sees. Open on the consequence: what this kind of
+event usually changes for someone in their role, now ("Wenn eine neue Marke in den nächsten Monaten ausgerollt
+wird, …", "Gerade wenn ein Eventteam wächst, …"). Wrapping the signal into such a clause is fine; the dated fact
+as the subject of the sentence is not. News, hiring, appointments and launches are never named. The one
+exception: the person's own post may be named in a few words, never announced as seen or read.
+`check_messages.py` flags a hook that copies its signal's words or names a job ad.
+
 **Must have:**
-- Specific hook (post reference OR career insight OR scored buying signal — not generic)
+- Specific hook (what their own post, career move or scored buying signal means for them — not generic, never the fact restated)
 - Clear value proposition
 - Natural, conversational tone
 - Soft CTA
@@ -494,7 +510,7 @@ why you write to them, what you offer in plain words and what you ask. Three pro
 reads as "what does he want?". Add a sentence where the why or the what is missing. Don't pad a message that already
 does all three.
 
-**If Step 5.5 ran:** for each contact, prefer the highest-scored signal from `company_scored_signals` as the hook over generic LinkedIn-post references. A score >= 70 signal anchored in real recent news is the strongest hook the demo can produce.
+**If Step 5.5 ran:** for each contact, build the hook on the highest-scored signal from `company_scored_signals` (what it means for them, never the signal restated) rather than on generic LinkedIn-post references. A score >= 70 signal anchored in real recent news is the strongest hook the demo can produce.
 
 **Which signals hook a message.** Only strong ones: an acquisition, funding, a new site or
 development centre, a capacity expansion, a new programme. A **product launch counts only when it
@@ -666,6 +682,7 @@ the link, the login, one teaser line and the CTA. No rundown of the contents; th
 
 - [ ] Messages feel personal, not templated
 - [ ] No profile info repetition
+- [ ] No hook restates its signal (news, job ad, new role): it says what it means for them
 - [ ] Clear value proposition in every message
 - [ ] Proper formatting (line breaks, character count 320–450)
 - [ ] Hook differs between contacts (no copy-paste structure)

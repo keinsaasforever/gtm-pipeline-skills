@@ -82,6 +82,16 @@ msgs["https://www.linkedin.com/in/mia"]["why_they_fit"] = "Bottles single casks.
 assert "why_they_fit 220 > ~200" in run("check_messages.py")  # deck copy over its target: a warning
 write_messages("Hi Josh,")
 
+write_signals(fresh=True)                                  # a hook that restates its signal or names a job ad fails
+msgs = json.loads((tmp / "csv/intermediate/messages.json").read_text())
+msgs["https://www.linkedin.com/in/joshua"]["li_p1"] = "Hi Josh,\nAcme opened a cask programme, Josh."
+msgs["https://www.linkedin.com/in/mia"]["email_p1"] = "Hi Mia,\nStone Spirits is hiring a cask buyer."
+(tmp / "csv/intermediate/messages.json").write_text(json.dumps(msgs))
+out = run("check_messages.py")
+assert "Acme-Casks: li hook restates the signal" in out and "Stone-Spirits: email hook names a job ad 'is hiring'" in out, out
+write_messages("Hi Josh,")
+assert "hook" not in run("check_messages.py")              # the fixture's own hooks say what it means for them
+
 write_signals(fresh=False)
 run("build_output.py")
 run("render_deck.py", "deck.html")
