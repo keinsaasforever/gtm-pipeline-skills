@@ -23,10 +23,12 @@ zero = re.search(r"\b(?:0|zero|null)\b[^.!?\d\n]{0,40}signal", visible, re.I)
 check(not zero, f"zero signal count shown: {zero and zero.group()!r}")
 vendor = re.search(r"\b(kitt|trykitt|fullenrich|bettercontact|phantombuster|pipe0|parallel\.ai|firecrawl|apollo|crustdata|amplemarket|clay)\b", visible, re.I)
 check(not vendor, f"provider name visible: {vendor and vendor.group()}")
-by_dom = {d["company_domain"]: d for d in data}
+# keyed by person: a company can have several cards
+by_dom = {(d["company_domain"], d["full_name"]): d for d in data}
 mails = []
 for c in cards:
-    d = by_dom[re.search(r'class="lead-domain" href="https://([^"]+)"', c).group(1)]
+    d = by_dom[(re.search(r'class="lead-domain" href="https://([^"]+)"', c).group(1),
+                html.unescape(re.search(r'class="cname"><strong>(.*?)</strong>', c).group(1)))]
     name, sig = d["company_name"], "sig-hot" in c
     check(sig == (d["group"] == "signal"), f"{name}: signal box vs data")
     check(re.search(r'class="signal sig-fit"><div class="siglabel">[^<]+</div><div class="sigtext">\s*\S', c),
