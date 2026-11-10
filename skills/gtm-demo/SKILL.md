@@ -626,6 +626,11 @@ result to `csv/output/`.
    - **Never name a third-party tool or data provider** anywhere in the rendered deck (no enrichment
      vendor, search/scrape provider, or phone/email finder). A signal's source link cites the
      *original publication* (press release, careers page, news outlet), not the tool that found it.
+     A hiring signal links one posting (the employer's own ATS posting first, else
+     `linkedin.com/jobs/view/<id>`), never a search or listing page, and claims only the role that
+     posting shows. Date it from the posting itself (`datePosted`, or the "posted N ago" label counted
+     back from the fetch date), never from a fetch tool's page date: on LinkedIn job pages that is a
+     "similar jobs" card's date.
      The lead's own LinkedIn link is fine. Sanitize (7a) already strips provider labels — this keeps
      hand-written hero/footer/method copy clean too.
    - Language DE or EN (`{{LANG}}` + swap the `{{LBL_*}}` button labels). **German uses Du-form**
