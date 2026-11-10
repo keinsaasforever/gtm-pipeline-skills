@@ -14,7 +14,7 @@ lives here. Values are case-sensitive; an off-list value silently matches nothin
 
 ### `company_industry` (120 Landbase values)
 ⚠ **Zero the whole query** (measured, each returns 0 alone and zeroes any list it joins): Architecture & Planning,
-Broadcast Media, E-Learning, Gambling & Casinos, Internet, Marketing & Advertising, Mechanical or Industrial
+Broadcast Media, Chemicals, E-Learning, Electrical & Electronic Manufacturing, Logistics & Supply Chain (2026-11-10), Gambling & Casinos, Internet, Marketing & Advertising, Mechanical or Industrial
 Engineering, Sports, Staffing & Recruiting, Wireless. There is **no Machinery value**; for edtech use `company_keywords`
 `edtech` instead of `E-Learning` (2026-10-01: E-Learning 0 alone, and `Education Management` 547k → 0 when joined). `company_hq_location` is not honoured
 (Germany returned South African and flight-school rows): enforce HQ locally, or scope by a `company` domain list.
