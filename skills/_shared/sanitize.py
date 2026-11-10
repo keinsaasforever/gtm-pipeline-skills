@@ -201,6 +201,9 @@ def is_article_url(url: str) -> bool:
     if not segs or segs[-1] in _LISTING_SEGMENTS:
         return False
     if parts.netloc.lower().endswith("linkedin.com"):  # posts only, never a company or person page
+        # one job posting (guest view) is the source itself, like gh_jid; never search or collection pages
+        if len(segs) == 3 and segs[:2] == ["jobs", "view"]:
+            return bool(re.search(r"(^|-)\d{6,}$", segs[2]))
         return segs[0] in ("posts", "feed", "pulse")
     return True
 

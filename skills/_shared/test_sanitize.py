@@ -74,5 +74,10 @@ for age, kept in ((59, 1), (60, 1), (61, 0)):
 
 # A Greenhouse posting embedded on the employer's careers page is the item; the careers page alone is a listing.
 assert is_article_url("https://acme.com/careers?gh_jid=123") and not is_article_url("https://acme.com/careers")
+assert is_article_url("https://www.linkedin.com/jobs/view/4489121455")
+assert is_article_url("https://www.linkedin.com/jobs/view/lead-installer-at-acme-4448424114")
+assert not any(is_article_url(u) for u in ("https://www.linkedin.com/jobs/search/?keywords=hvac",
+    "https://www.linkedin.com/jobs/collections/recommended/", "https://www.linkedin.com/jobs/view/",
+    "https://www.linkedin.com/company/acme/jobs/", "https://www.linkedin.com/jobs/hvac-jobs"))
 
 print("ok")
