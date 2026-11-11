@@ -70,7 +70,7 @@ for n, seg in enumerate([s for s in cfg["segments"] if any(r["segment"] == s["ke
     rows = [r for r in data if r["segment"] == seg["key"]]
     sig = sorted([r for r in rows if r["group"] == "signal"], key=lambda r: r["signal_date"], reverse=True)
     icp = [r for r in rows if r["group"] != "signal"]
-    meta = " · ".join(t.format(n=len(rows), s=len(sig), m=sum(bool(r["email"]) for r in rows))
+    meta = " · ".join(t.format(n=len({r["company_domain"] for r in rows}), s=len(sig), m=sum(bool(r["email"]) for r in rows))
                       for t in L["meta"] if sig or "{s}" not in t)  # a zero signal count never shows
     body = [f'<section class="seg"><div class="seg-head"><div class="seg-kicker">{L["segment"]} {n}</div><h2>{e(seg["title"])}</h2><p>{e(seg["intro"])}</p><div class="seg-meta">{meta}</div></div>']
     if sig:
