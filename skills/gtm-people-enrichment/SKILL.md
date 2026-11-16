@@ -62,6 +62,8 @@ Deliverability status is **blind to identity.** Providers return `DELIVERABLE` e
   (the imprint's or contact page's address, or a domain that redirects to the website), put it in the optional
   `email_domain` column (space-separated for several). `pb_email_finder.py` and gtm-demo's `fe_enrich.py` then keep an
   address on it as a `match`; without it the right person's address is dropped as a mismatch (a supplier run, 2026-10-12).
+  Read the imprint only through `_shared/legal_pages.py` (conventions.md rule 15): never a data-protection or security
+  officer, never a fax number.
 
 This is the real anti-"made-up-address" guard; the `sanitize.py` deliverability filter (below) is only the last net.
 

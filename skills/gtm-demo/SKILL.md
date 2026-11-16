@@ -335,7 +335,8 @@ write that domain into the optional `email_domain` column before the second prov
 (space-separated when there are several); `pb_email_finder.py` and `references/fe_enrich.py` then
 keep an address on it. A similar name is not evidence. A supplier run, 2026-10-12: the site sat on
 one domain, the imprint gave info@ on another that redirected to the site, and the check dropped
-the right person's address on it.
+the right person's address on it. Read an imprint only through `_shared/legal_pages.py`
+(conventions.md rule 15): never a data-protection or security officer, never a fax number.
 
 Additional enrichment for message personalization (if available):
 - LinkedIn headline and summary (from LinkedIn scrape via PhantomBuster)

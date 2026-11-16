@@ -136,6 +136,13 @@ These rules apply to every skill in the pipeline:
 13. **Ask when critical input is missing** — if an input essential to a correct result is missing or ambiguous (skill-specific: e.g. ICP/target audience, offering & value prop, provider choice or credit budget, tone/language, a required ID or path), ask the user with the **AskUserQuestion** tool rather than guessing. Low-stakes defaults (poll interval, batch size within limits) don't need a prompt.
 14. **macOS has no `timeout` (nor `gtimeout`)** — never wrap a call in it; the command fails before the call runs. The shared
     scripts carry their own limits (`requests`/`subprocess` timeouts, poll caps); give a hand-written `curl` call `-m <seconds>`.
+15. **Legal pages (imprint, Impressum, mentions légales …) only through `_shared/legal_pages.py`** (Paul, 2026-11-16) — for an
+    address, the managing directors, an office mailbox or a mail domain:
+    `python3 ~/.claude/skills/gtm-pipeline/_shared/legal_pages.py <domain> [<country ISO code>]` (free, `TINYFISH_API_KEY`)
+    prints the page as JSON. It finds the page by the slugs of the company's country's languages plus English, and blanks every
+    data-protection and information-security officer (name, address, phone, mail) before you see it. A script that fetches a
+    legal page itself passes it through `redact(page)` before reading or saving it. Never save, extract or contact a
+    data-protection or security officer, and never take a fax number for a phone.
 
 ---
 
@@ -394,7 +401,7 @@ Each line is exported as it stands, so a value with spaces stays whole; keep val
 | `BETTERCONTACT_API_KEY` | BetterContact | people-search, people-enrichment |
 | `FULLENRICH_API_KEY` | FullEnrich | company-search, people-search, people-enrichment |
 | `SERPAPI_API_KEY` | SerpAPI | company-search, people-search (domain lookup fallback) |
-| `TINYFISH_API_KEY` | TinyFish (free search + fetch) | company-search (directories, domain lookup), signal-search (site-search fallback), demo-headless |
+| `TINYFISH_API_KEY` | TinyFish (free search + fetch) | company-search (directories, domain lookup), signal-search (site-search fallback), demo-headless, `_shared/legal_pages.py` |
 | `FIRECRAWL_API_KEY` | Firecrawl | signal-search (`--site-search firecrawl`), company-search (Firecrawl Agent) |
 | `TAVILY_API_KEY` | Tavily | signal-search (`--site-search tavily`, optional, for comparisons) |
 | `PARALLEL_API_KEY` | Parallel AI | people-search (FindAll), signal-search, company-search, company-enrichment |
