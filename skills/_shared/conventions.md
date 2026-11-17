@@ -143,6 +143,12 @@ These rules apply to every skill in the pipeline:
     data-protection and information-security officer (name, address, phone, mail) before you see it. A script that fetches a
     legal page itself passes it through `redact(page)` before reading or saving it. Never save, extract or contact a
     data-protection or security officer, and never take a fax number for a phone.
+16. **Reading a web page: TinyFish → Firecrawl → Orca browser → Playwright** (Paul, 2026-11-17). Fetch with TinyFish first
+    (free). If it returns no readable text (a client-rendered app shows only its title or "Loading…"), scrape the URL
+    with Firecrawl (`/v2/scrape`, renders the JavaScript server-side, `FIRECRAWL_API_KEY`). Only if that also fails, open
+    it in the Orca CLI browser, and only then in Playwright; close either browser when done. Record in `run_log.md` which
+    step read each page. A legal page still goes through `_shared/legal_pages.py` (rule 15), or through `redact(page)`
+    when a later step fetched it.
 
 ---
 
