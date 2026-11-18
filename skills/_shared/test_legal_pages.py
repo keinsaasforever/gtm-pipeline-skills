@@ -26,4 +26,12 @@ assert "DPD und DHL" in strip_officers("Versand mit DPD und DHL.")              
 p = {"text": "Datenschutzbeauftragter: Max Muster\nmax@dsb-firma.example", "links": [
     "mailto:max@dsb-firma.example", "mailto:datenschutz@acme.example", "mailto:info@acme.example"]}
 assert redact(p) and p["links"] == ["mailto:info@acme.example"]
+# fetch_legal: no legal link on a cached homepage, /impressum lands back on the homepage, /impressum.html has it.
+import legal_pages as lp
+pages = {"https://acme.de": {"url": "https://acme.de", "final_url": "https://acme.de/", "text": "Willkommen", "links": []},
+         "https://acme.de/impressum": {"url": "https://acme.de/impressum", "final_url": "https://acme.de/", "text": "Willkommen"},
+         "https://acme.de/impressum.html": {"url": "https://acme.de/impressum.html", "final_url": "https://acme.de/impressum.html",
+                                             "text": "Impressum\nAcme GmbH, Geschäftsführer: Max Muster"}}
+lp._fetch = lambda urls, links=False: [dict(pages[urls[0]])] if urls[0] in pages else []
+assert lp.fetch_legal("acme.de") == {"url": "https://acme.de/impressum.html", "text": pages["https://acme.de/impressum.html"]["text"]}
 print("legal_pages: ok")

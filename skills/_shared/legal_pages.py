@@ -448,8 +448,10 @@ def _host(url: str) -> str:
 def fetch_legal(domain: str, country: str | None = None) -> dict | None:
     """{"url", "text"} of the company's legal page, officers blanked, or None:
     the homepage's best legal link (legal_link, the site's own host only), else
-    /impressum for a German-speaking country. The text is redacted even when
-    is_legal does not know the page."""
+    /impressum, then /impressum.html, for a German-speaking country. A fallback
+    that lands back on the homepage is no legal page (a cached homepage of an
+    older site build can lack the link: karrierehafen.de, 2026-11-18). The text
+    is redacted even when is_legal does not know the page."""
     host = _host(f"https://{domain.strip().removeprefix('https://').removeprefix('http://')}")
     home = _fetch([f"https://{host}"], links=True)
     if not home:
@@ -457,13 +459,17 @@ def fetch_legal(domain: str, country: str | None = None) -> dict | None:
     site = _host(home[0].get("final_url") or "") or host
     link = legal_link(home[0].get("links"), site, country,
                       own=lambda u: _host(u) == site or _host(u).endswith("." + site))
-    if not link and "de" in languages(country, host)[:1]:
-        link = f"https://{site}/impressum"
-    page = _fetch([link])[0] if link else None
-    if not page or not (page.get("text") or "").strip():
-        return None
-    redact(page)
-    return {"url": page.get("final_url") or link, "text": page["text"]}
+    tries = [link] if link else ([f"https://{site}/impressum", f"https://{site}/impressum.html"]
+                                 if "de" in languages(country, host)[:1] else [])
+    for url in tries:
+        page = (_fetch([url]) or [None])[0]
+        if not page or not (page.get("text") or "").strip():
+            continue
+        if not link and urlparse(page.get("final_url") or url).path.strip("/") == "":
+            continue  # the fallback redirected to the homepage
+        redact(page)
+        return {"url": page.get("final_url") or url, "text": page["text"]}
+    return None
 
 
 if __name__ == "__main__":
