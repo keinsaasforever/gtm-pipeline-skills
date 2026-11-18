@@ -166,6 +166,11 @@ pages = ss.ats_job_pages("acme-elektro.de", 2, None, "Acme Elektro", german=True
 assert [p["metadata"]["sourceURL"] for p in pages] == ["https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1-S"], pages
 assert ss.ats_job_pages("acme-elektro.com", 2, None, "Acme Elektro", german=False) == []  # Germany only
 
+# A staffing agency's own ads are all zeitarbeit: the filtered search finds none, the unfiltered one does.
+serve({f"{a.ARBEITSAGENTUR_URL}?was=Unit+Personal&veroeffentlichtseit=60&size=25&zeitarbeit=false": json.dumps({"ergebnisliste": []}),
+       f"{a.ARBEITSAGENTUR_URL}?was=Unit+Personal&veroeffentlichtseit=60&size=25": json.dumps({"ergebnisliste": [
+           ad("Unit Personal GmbH", "Lagerhelfer (m/w/d)", day(5), "10001-9-S")]})})
+assert [j["title"] for j in a.arbeitsagentur("Unit Personal", 60)] == ["Lagerhelfer (m/w/d)"]
 # The job feeds switch on when the include half of signal_criteria.md asks for hiring.
 for criteria in ("- Hiring installers for PV", "- Stellenanzeigen für Elektriker", "- stellt Monteure ein",
                  "- Recruiting a Head of Operations", "- Neueinstellung im Vertrieb"):

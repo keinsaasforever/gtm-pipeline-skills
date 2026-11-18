@@ -312,18 +312,24 @@ def arbeitsagentur(company_name: str, days: int) -> list[dict]:
     """Postings on the Arbeitsagentur job board whose employer is the company itself: one search call,
     no detail calls. The search also returns other employers (a sister company at the same address) and
     staffing agencies; zeitarbeit=false drops the agencies, the exact name match the rest.
+    A staffing agency's own ads are all zeitarbeit, so when the filtered search finds none of the
+    company's own, it asks once more without the filter (Unit Personalservice, 2026-11-18: 0 vs 25).
     veroeffentlichtseit (0-100 days) filters by the latest republish date, so an ad first posted months
     ago comes back; published is datumErsteVeroeffentlichung, the first publication, which the live
     response carries though the OpenAPI spec does not list it (checked 2026-10-13)."""
-    query = urlencode({"was": company_name, "veroeffentlichtseit": min(days, 100), "size": 25, "zeitarbeit": "false"})
-    data = json.loads(_open(f"{ARBEITSAGENTUR_URL}?{query}", {"X-API-Key": "jobboerse-jobsuche"})[1])
-    key, out = company_key(company_name), []
-    for j in data.get("ergebnisliste") or []:
-        if company_key(j.get("firma")) != key or not j.get("referenznummer"):
-            continue
-        place = ((j.get("stellenlokationen") or [{}])[0].get("adresse") or {}).get("ort") or ""
-        out.append(_job(j.get("stellenangebotsTitel"), f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{j['referenznummer']}",
-                        j.get("datumErsteVeroeffentlichung"), ", ".join(x for x in (j.get("firma"), place) if x)))
+    key = company_key(company_name)
+    for zeitarbeit in ({"zeitarbeit": "false"}, {}):
+        query = urlencode({"was": company_name, "veroeffentlichtseit": min(days, 100), "size": 25, **zeitarbeit})
+        data = json.loads(_open(f"{ARBEITSAGENTUR_URL}?{query}", {"X-API-Key": "jobboerse-jobsuche"})[1])
+        out = []
+        for j in data.get("ergebnisliste") or []:
+            if company_key(j.get("firma")) != key or not j.get("referenznummer"):
+                continue
+            place = ((j.get("stellenlokationen") or [{}])[0].get("adresse") or {}).get("ort") or ""
+            out.append(_job(j.get("stellenangebotsTitel"), f"https://www.arbeitsagentur.de/jobsuche/jobdetail/{j['referenznummer']}",
+                            j.get("datumErsteVeroeffentlichung"), ", ".join(x for x in (j.get("firma"), place) if x)))
+        if out:
+            break
     return out
 
 
