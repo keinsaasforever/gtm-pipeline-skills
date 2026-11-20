@@ -66,6 +66,7 @@ hero = re.search(r"<h1[^>]*>(.*?)</h1>", page, re.S)
 check(hero and len(html.unescape(re.sub(r"<[^>]+>", "", hero.group(1))).split()) <= 7, "hero headline > 7 words")
 check(cfg["hero_intro"].count(". ") <= 1, "hero intro > 2 sentences")
 check('id="dl"' in page and 'id="toggle"' in page and 'class="cta-btn' in page, "plumbing missing (dl / toggle / cta-btn)")
+check("sales.keinsaas.com/signup" in page, "the free-start button (/signup) is missing")
 m = re.search(r'const CSV = ("(?:[^"\\]|\\.)*");', page, re.S)
 check(m is not None, "embedded CSV missing")
 if m:
