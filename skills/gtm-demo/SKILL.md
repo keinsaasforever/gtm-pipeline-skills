@@ -604,8 +604,8 @@ result to `csv/output/`.
    - **List bar** carries a **Download-CSV button** (`.dl`) beside the Expand-all toggle; the
      footer carries a **big CTA button** (`.cta-btn`) linking to **keinsaas's** booking page, always
      (the deck is a keinsaas pitch to the prospect, never the prospect's own demo link):
-     `{{CALENDAR_URL}}` = https://calendar.app.google/QaGdhyiK6AQ8bsjy9
-     (the schedule embedded on keinsaas.com/sales-agent; re-check there if it 404s). These two elements are the
+     `{{CALENDAR_URL}}` = https://calendar.google.com/calendar/appointments/schedules/AcZssZ3GtDafshGBFMT8j6ThW0mQ3wjSpKod2bJpu0KqktYZ7Mr-tcPQdHZ6bmN7EyIxqQ2Ln-AwLtZX
+     (Paul 2026-11-20: the booking page for first Sales Agent calls). These two elements are the
      grafted-in pieces; the rest is the standard combined-deck look.
    - **`{{CSV_DATA}}`**: embed the sanitized `csv/output/` rows as an escaped JS string (`\r\n`
      line endings; quote any field containing a comma) so the Download button emits a real CSV
