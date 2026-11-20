@@ -4,7 +4,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from legal_pages import is_legal, languages, legal_link, redact, strip_officers
+from legal_pages import is_legal, languages, legal_link, redact, strip_fax, strip_officers
 
 assert languages("DE", "acme.com") == ["de", "en"] and languages(None, "acme.fr") == ["fr", "en"]
 assert legal_link(["https://x.com/en/departments/legal-department", "https://x.com/en/legal-notice"], "x.com", "DE") \
@@ -26,6 +26,17 @@ assert "DPD und DHL" in strip_officers("Versand mit DPD und DHL.")              
 p = {"text": "Datenschutzbeauftragter: Max Muster\nmax@dsb-firma.example", "links": [
     "mailto:max@dsb-firma.example", "mailto:datenschutz@acme.example", "mailto:info@acme.example"]}
 assert redact(p) and p["links"] == ["mailto:info@acme.example"]
+tkg = ("Geschäftsführer: Anna Beispiel\nTelefon: +49 4121 12345-0\nTelefax: +49 (0) 4121 / 12345-99\n\n"
+       "Sicherheitsbeauftragter gemäß § 166 TKG:\nMax Muster\nTel.: +49 4121 12345-77\n\nRegistergericht: HRB 1")
+out = strip_officers(tkg)                                                  # a telephony provider (2026-11-20)
+assert "Muster" not in out and "12345-77" not in out and "Anna Beispiel" in out and "HRB 1" in out
+out = strip_fax(tkg)
+assert "12345-99" not in out and "Telefon: +49 4121 12345-0" in out and len(out) == len(tkg)
+assert "05261" not in strip_fax("Fax-Nr.: 05261 999") and strip_fax("Faxgerät defekt") == "Faxgerät defekt"
+ext = ("### **Betrieblicher Datenschutzbeauftragter gemäß §4f BDSG**\n\nMax Muster  \nKanzlei Recht Partnerschaft mbB "
+       "Rechtsanwälte Steuerberater  \nWeg 5  \n20459 Hamburg\n\nTel. +49 40 300\n\n### **Handelsregister**\nHRB 1")
+out = strip_officers(ext)                                         # an external officer's law firm (2026-11-20)
+assert "Kanzlei" not in out and "Weg 5" not in out and "+49 40 300" not in out and "HRB 1" in out
 # fetch_legal: no legal link on a cached homepage, /impressum lands back on the homepage, /impressum.html has it.
 import legal_pages as lp
 pages = {"https://acme.de": {"url": "https://acme.de", "final_url": "https://acme.de/", "text": "Willkommen", "links": []},

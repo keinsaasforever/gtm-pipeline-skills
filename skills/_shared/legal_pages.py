@@ -14,8 +14,8 @@ the slugs of the company's country's languages plus English, with every
 officer's block blanked. In Python: `fetch_legal(domain, country)`, or
 `legal_link(links, host, country)` and `redact(page)` on pages you fetched.
 TinyFish fetch (free tier), TINYFISH_API_KEY from the environment. Never save
-an imprint page you did not pass through redact(), and never take its fax
-number for a phone.
+an imprint page you did not pass through redact(); fetch_legal also blanks its
+fax numbers (strip_fax), so none is ever taken for a phone.
 
 legal_link: the slugs below come from a survey of company sites in 27
 languages (2026-11-16, each top slug seen on two or more real sites). The
@@ -203,6 +203,7 @@ OFFICER = re.compile(
     r"datenschutz-?\s?beauftragte\w*|beauftragte[rn]?\s+fur\s+(?:den\s+)?datenschutz|datenschutz-?\s?koordinator\w*"
     r"|datenschutz-?\s?berater\w*|informations-?\s?sicherheits-?\s?beauftragte\w*"
     r"|(?:it|cyber)-?\s?sicherheits-?\s?beauftragte\w*|beauftragte[rn]?\s+fur\s+informationssicherheit"
+    r"|sicherheits-?\s?beauftragte\w*"  # the TKG's, on a telephony provider's Impressum (2026-11-20)
     r"|data\s+(?:protection|privacy)\s+(?:officer|lead|manager)|\bdpo\b|(?:chief\s+)?privacy\s+officer"
     r"|(?:chief\s+)?information\s+security\s+(?:officer|manager)|head\s+of\s+information\s+security|\bciso\b"
     r"|(?:cyber\s+|it\s+)?security\s+officer"
@@ -241,10 +242,10 @@ _BOX_WORD = re.compile(r"datenschutz|privacy|dataprotection|data-protection|tiet
                        r"|andmekaitse|protecciondedatos|privacidad|privacidade"
                        r"|(?:^|[._+-])(?:dpo|dsb|ciso|isb|iod|rpd|dpd|epd|rssi|gdpr|dsgvo|rgpd)(?:$|[._+-]|\d)", re.I)
 # Where an officer's block ends, read on the folded line (fold1): the
-# register, a tax number, the company's own officers, the content's
+# register, a tax number (not a firm of "Steuerberater": an external officer's own), the company's own officers, the content's
 # responsible, the authority, the site's credits, the next legal topic.
 _SECTION = re.compile(
-    r"regist|\bhr[ab]\b|\bust\b|ust-|\bvat\b|\btax\b|steuer|company\s+(?:number|no)|\brcs\b|\bsiren|\bkvk\b"
+    r"regist|\bhr[ab]\b|\bust\b|ust-|\bvat\b|\btax\b|steuer(?!berat)|company\s+(?:number|no)|\brcs\b|\bsiren|\bkvk\b"
     r"|\bp\.?\s?iva\b|\bcif\b|\bnif\b|\bkrs\b|\bnip\b|\bcvr\b|org\.?\s?nr|y-tunnus|registrikood|mersis|\bico\b"
     r"|gesch(?:a|ae)ftsf|geschaftsleitung|vertreten|vertretungsberechtigt|vorstand|inhaber|prokur|director|managing"
     r"|\bceo\b|gerant|amministrator|administrador|bestuurder|zarzad|haftung|liability|copyright|impressum|imprint"
@@ -438,7 +439,20 @@ def _fetch(urls: list[str], links: bool = False) -> list[dict]:
     for page in results:
         if is_legal(page.get("url"), page.get("text")):
             redact(page)
+            page["text"] = strip_fax(page.get("text"))
     return results
+
+
+# A fax number after its label, in any spelling ("Fax:", "Telefax", "Fax-Nr."). This copy only: the Sales Agent's
+# list-enricher reads the fax off the page to mark it, but no demo or skill needs one (Paul, 2026-11-16).
+_FAX = re.compile(r"\b(?:tele)?fax\b[\s.:-]*(?:(?:nr|nummer|number|no)\b[\s.:]*)?\+?[\d\s()/.–-]*\d", re.I)
+
+
+def strip_fax(text):
+    """`text` with every fax number blanked (spaces, so lines and positions stay)."""
+    if not isinstance(text, str):
+        return text
+    return _FAX.sub(lambda m: " " * len(m.group()), text)
 
 
 def _host(url: str) -> str:
@@ -468,7 +482,7 @@ def fetch_legal(domain: str, country: str | None = None) -> dict | None:
         if not link and urlparse(page.get("final_url") or url).path.strip("/") == "":
             continue  # the fallback redirected to the homepage
         redact(page)
-        return {"url": page.get("final_url") or url, "text": page["text"]}
+        return {"url": page.get("final_url") or url, "text": strip_fax(page["text"])}
     return None
 
 
