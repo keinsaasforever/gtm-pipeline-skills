@@ -443,16 +443,16 @@ def _fetch(urls: list[str], links: bool = False) -> list[dict]:
     return results
 
 
-# A fax number after its label, in any spelling ("Fax:", "Telefax", "Fax-Nr."). This copy only: the Sales Agent's
+# A fax number after its label, in any spelling ("Fax:", "Telefax", "Fax-Nr."), also in a table ("| Fax: | …"). This copy only: the Sales Agent's
 # list-enricher reads the fax off the page to mark it, but no demo or skill needs one (Paul, 2026-11-16).
-_FAX = re.compile(r"\b(?:tele)?fax\b[\s.:-]*(?:(?:nr|nummer|number|no)\b[\s.:]*)?\+?[\d\s()/.–-]*\d", re.I)
+_FAX = re.compile(r"\b(?:tele)?fax\b[\s.:|-]*(?:(?:nr|nummer|number|no)\b[\s.:|]*)?(\+?[\d\s()/.–-]*\d)", re.I)
 
 
 def strip_fax(text):
-    """`text` with every fax number blanked (spaces, so lines and positions stay)."""
+    """`text` with every fax number blanked (spaces, so lines and positions stay); the label stays."""
     if not isinstance(text, str):
         return text
-    return _FAX.sub(lambda m: " " * len(m.group()), text)
+    return _FAX.sub(lambda m: m.group()[:m.start(1) - m.start()] + " " * len(m.group(1)), text)
 
 
 def _host(url: str) -> str:

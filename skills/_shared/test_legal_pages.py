@@ -33,6 +33,8 @@ assert "Muster" not in out and "12345-77" not in out and "Anna Beispiel" in out 
 out = strip_fax(tkg)
 assert "12345-99" not in out and "Telefon: +49 4121 12345-0" in out and len(out) == len(tkg)
 assert "05261" not in strip_fax("Fax-Nr.: 05261 999") and strip_fax("Faxgerät defekt") == "Faxgerät defekt"
+assert strip_fax("| Telefax: | +49 (0) 251 123 45 |\n| E-Mail: | a@b.de |").count("|") == 6 and "251" not in strip_fax(
+    "| Telefax: | +49 (0) 251 123 45 |")                                 # a table row keeps its cells
 ext = ("### **Betrieblicher Datenschutzbeauftragter gemäß §4f BDSG**\n\nMax Muster  \nKanzlei Recht Partnerschaft mbB "
        "Rechtsanwälte Steuerberater  \nWeg 5  \n20459 Hamburg\n\nTel. +49 40 300\n\n### **Handelsregister**\nHRB 1")
 out = strip_officers(ext)                                         # an external officer's law firm (2026-11-20)
