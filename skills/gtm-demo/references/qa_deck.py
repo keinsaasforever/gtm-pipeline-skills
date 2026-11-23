@@ -65,6 +65,8 @@ if cfg["lang"] == "de":  # the deck's own copy is Du-form; drafts follow their o
 hero = re.search(r"<h1[^>]*>(.*?)</h1>", page, re.S)
 check(hero and len(html.unescape(re.sub(r"<[^>]+>", "", hero.group(1))).split()) <= 7, "hero headline > 7 words")
 check(cfg["hero_intro"].count(". ") <= 1, "hero intro > 2 sentences")
+check('class="disclaimer"' in page, "hero lead-sample disclaimer missing")
+check("tool" in cfg["footer_body"].lower(), "footer body never says the call walks them through the tool")
 check('id="dl"' in page and 'id="toggle"' in page and 'class="cta-btn' in page, "plumbing missing (dl / toggle / cta-btn)")
 m = re.search(r'const CSV = ("(?:[^"\\]|\\.)*");', page, re.S)
 check(m is not None, "embedded CSV missing")

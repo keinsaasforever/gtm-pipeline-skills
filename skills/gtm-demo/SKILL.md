@@ -619,6 +619,12 @@ result to `csv/output/`.
    - **Hero = hook, not manual.** `{{HERO_HEADLINE}}` short (≤ ~7 words), outcome-first, no jargon;
      `{{HERO_INTRO}}` 1–2 short sentences on what they *get* (ready-to-send outreach to the right
      people), never how the pipeline works. Intrigue, don't overwhelm with technical detail.
+   - **A lead sample, not the product demo** (Paul, 2026-11-23). `render_deck.py` adds a fixed line under the
+     hero intro (the deck is a sample of leads by their criteria from the engine behind the Sales Agent, not a
+     product demo) and the eyebrow reads "Lead-Stichprobe" / "Lead sample"; never write that line yourself.
+     The product demo is the call: `{{FOOTER_BODY}}` keeps what the call covers and adds, in one clause, that
+     we walk them through the tool ("führen wir dich durch das Tool und zeigen dir, wie …" / "we walk you
+     through the tool and show you how …"). Don't turn the footer into a product-demo pitch.
    - **Zero signals never show** (Paul, 2026-10-09). No "0 with a fresh buying signal" tile, and no
      hero, method-note, footer or segment line that states a zero or "no signal" count. A count of 1
      or more shows as usual. `render_deck.py` drops the tile, the zero count in a segment's meta line
@@ -660,7 +666,7 @@ formal-address forms in the deck's own copy (the drafts follow the message promp
 contain no full date (`2026-07-07`, `07.07.2026`, `7. Juli 2026`, `July 7, 2026`) and no month
 followed by a year; a hit means a stale event slipped in, so rewrite that sentence from timeless
 fit facts. **Hero is tight** — `{{HERO_HEADLINE}}` ≤ ~7 words and `{{HERO_INTRO}}` ≤ 2
-sentences with no pipeline/sourcing detail. **No zero signal count** ("0 … signal") in the visible text.
+sentences with no pipeline/sourcing detail. **The hero carries the lead-sample disclaimer** and the footer body mentions the tool. **No zero signal count** ("0 … signal") in the visible text.
 Also assert the deck's plumbing survived templating: the
 **Download-CSV button** (`id="dl"`) with a non-empty `CSV` string, the **footer CTA** (`.cta-btn`),
 and the Expand-all toggle (`id="toggle"`) are all present, and the embedded CSV row count == card
