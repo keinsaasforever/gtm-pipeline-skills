@@ -122,11 +122,13 @@ def languages(country: str | None, host: str | None = None) -> list[str]:
 
 def _segments(url: str) -> list[list[str]]:
     """The path's segments and its fragment ("#mentionslegales"), each as its
-    words: percent-decoded, folded, "_" as "-", no file extension."""
+    words: percent-decoded, folded, "_" as "-", no file extension, no leading
+    page id (PrestaShop's "/content/6-politica-de-privacidad")."""
     p = urlparse(url)
     out = []
     for raw in re.split(r"[/#]", f"{p.path}#{p.fragment}"):
         seg = _EXT.sub("", fold(unquote(raw)).replace("_", "-").replace(" ", "-")).strip("-")
+        seg = re.sub(r"^\d+-+", "", seg)
         if seg:
             out.append(seg.split("-"))
     return out
@@ -156,7 +158,8 @@ def rank(url: str, langs: list[str] | None) -> tuple | None:
 
 
 # The privacy pages, where the law has the officer named (GDPR Art. 13): legal
-# pages for is_legal, never a legal_link pick (they name the controller only).
+# pages for is_legal. legal_link takes one only as a weak slug of the company's
+# languages (SLUGS), when no legal notice is linked: it names the controller.
 PRIVACY = ["datenschutz", "datenschutzerklarung", "datenschutzerklaerung", "datenschutzhinweise", "privacy",
            "privacy-policy", "privacy-notice", "privacy-statement", "data-protection", "data-privacy",
            "confidentialite", "politique-de-confidentialite", "privacidad", "privacidade", "informativa-privacy",
