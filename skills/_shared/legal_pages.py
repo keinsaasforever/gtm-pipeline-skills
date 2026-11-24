@@ -158,7 +158,8 @@ def rank(url: str, langs: list[str] | None) -> tuple | None:
 
 
 # The privacy pages, where the law has the officer named (GDPR Art. 13): legal
-# pages for is_legal, never a legal_link pick (they name the controller only).
+# pages for is_legal. legal_link takes one only as a weak slug of the company's
+# languages (SLUGS), when no legal notice is linked: it names the controller.
 PRIVACY = ["datenschutz", "datenschutzerklarung", "datenschutzerklaerung", "datenschutzhinweise", "privacy",
            "privacy-policy", "privacy-notice", "privacy-statement", "data-protection", "data-privacy",
            "confidentialite", "politique-de-confidentialite", "privacidad", "privacidade", "informativa-privacy",
