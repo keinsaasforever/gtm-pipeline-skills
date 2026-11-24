@@ -13,6 +13,8 @@ assert legal_link(["https://x.co.uk/terms-and-conditions", "https://x.co.uk/priv
     == "https://x.co.uk/terms-and-conditions"                                  # the UK names the operator there
 assert legal_link(["https://x.fr/cgv", "https://x.fr/mentions_legales.html"], "x.fr") == "https://x.fr/mentions_legales.html"
 assert legal_link(["https://x.com/custom-imprinting"], "x.com", "US") is None
+assert legal_link(["https://x.es/content/4-quienes-somos", "https://x.es/content/6-politica-de-privacidad"], "x.es", "ES") \
+    == "https://x.es/content/6-politica-de-privacidad"                         # PrestaShop's leading page id
 assert is_legal("https://x.de/datenschutz", "") and not is_legal("https://x.com/", "inhabergeführtes Unternehmen")
 
 page = ("Geschäftsführer: Anna Beispiel\n\n## Externer Datenschutzbeauftragter\n\nMax Mustermann\nWeg 5\n32657 Lemgo\n\n"

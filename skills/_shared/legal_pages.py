@@ -122,11 +122,13 @@ def languages(country: str | None, host: str | None = None) -> list[str]:
 
 def _segments(url: str) -> list[list[str]]:
     """The path's segments and its fragment ("#mentionslegales"), each as its
-    words: percent-decoded, folded, "_" as "-", no file extension."""
+    words: percent-decoded, folded, "_" as "-", no file extension, no leading
+    page id (PrestaShop's "/content/6-politica-de-privacidad")."""
     p = urlparse(url)
     out = []
     for raw in re.split(r"[/#]", f"{p.path}#{p.fragment}"):
         seg = _EXT.sub("", fold(unquote(raw)).replace("_", "-").replace(" ", "-")).strip("-")
+        seg = re.sub(r"^\d+-+", "", seg)
         if seg:
             out.append(seg.split("-"))
     return out
