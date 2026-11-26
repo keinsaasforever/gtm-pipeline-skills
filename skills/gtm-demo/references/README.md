@@ -46,10 +46,10 @@ Both CTA variants are yes/no questions offering something free (`A` and `B` offe
 ```json
 {"lang": "de", "client_name": "Acme", "client_slug": "acme",
  "hero_headline": "≤ 7 words", "hero_intro": "≤ 2 sentences, what they get",
- "stat4": {"n": "3", "label": "Branchen"},
+ "stat4": {"n": "3", "label": "Branchen"}, "org_plural": "optional, what the segment line counts: \"Kommunen\", \"charities\" (default Unternehmen / companies)",
  "segments": [{"key": "machinery", "title": "Maschinenbau", "intro": "who they are, who decides"}],
  "approach_signal": "…", "approach_icp": "…", "method_note": "…",
- "footer_headline": "…", "footer_body": "…", "footer_meta": "Erstellt für Acme von keinsaas · Monat Jahr",
+ "footer_headline": "…", "footer_body": "what the call covers, incl. a walk through the tool", "footer_meta": "Erstellt für Acme von keinsaas · Monat Jahr",
  "cta_label": "Termin buchen", "signoff": {"de": "Viele Grüße\nName", "fr": "Meilleures salutations\nName"}}
 ```
 The booking link is fixed in `render_deck.py` (keinsaas's, always). Labels exist for `de` and `en`.

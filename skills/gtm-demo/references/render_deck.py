@@ -10,19 +10,22 @@ LABELS = {
     "de": dict(signal="Kaufsignal", fit="Warum es passt", contact="Entscheider", subject="Betreff", draft="Nachrichtenentwurf",
                verified="verifiziert", likely="wahrscheinlich gültig", published="auf der Website veröffentlicht", on_request="E-Mail auf Anfrage",
                cta_a="CTA A · Frage", cta_b="CTA B · Angebot", sig_first="Signal zuerst", icp="ICP-Fit", segment="Segment",
-               meta=("{n} Unternehmen", "{s} mit aktuellem Kaufsignal", "{m} mit E-Mail"), tag_sig="Signal",
+               meta=("{n} {org}", "{s} mit aktuellem Kaufsignal", "{m} mit E-Mail"), tag_sig="Signal",
                stat1="Entscheider", stat1_named="Ansprechpartner", stat2="mit aktuellem Kaufsignal", stat3="geprüfte E-Mail-Adressen", stat3_all="E-Mail-Adressen",
+               eyebrow="Lead-Stichprobe", disclaimer="Das ist keine Produktdemo, sondern eine Stichprobe: Leads nach deinen Kriterien, gefunden von der Engine hinter unserem Sales Agent.",
                download="CSV herunterladen", expand="Alle aufklappen", collapse="Alle zuklappen", signup="Kostenlos starten",
                months=["Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sept.", "Okt.", "Nov.", "Dez."]),
     "en": dict(signal="Buying signal", fit="Why they fit", contact="Decision-maker", subject="Subject", draft="Draft message",
                verified="verified", likely="likely valid", published="published on their website", on_request="Email on request",
                cta_a="CTA A · Question", cta_b="CTA B · Offer", sig_first="Signal first", icp="ICP fit", segment="Segment",
-               meta=("{n} companies", "{s} with a fresh buying signal", "{m} with email"), tag_sig="Signal",
+               meta=("{n} {org}", "{s} with a fresh buying signal", "{m} with email"), tag_sig="Signal",
                stat1="decision-makers", stat1_named="named contacts", stat2="with a fresh buying signal", stat3="checked email addresses", stat3_all="email addresses",
+               eyebrow="Lead sample", disclaimer="This is not a product demo but a sample: leads that fit your criteria, found by the engine behind our Sales Agent.",
                download="Download CSV", expand="Expand all", collapse="Collapse all", signup="Start free",
                months=["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]),
 }
 L = LABELS[cfg["lang"]]
+ORG = cfg.get("org_plural") or ("Unternehmen" if cfg["lang"] == "de" else "companies")  # e.g. "charities", "Kommunen"
 BADGE = {"valid": ("est-ok", L["verified"]), "valid-risky": ("est-ok", L["likely"]), "published": ("est-pub", L["published"])}
 e = lambda s: html.escape(str(s or ""), quote=True)
 para = lambda s: e(s).replace("\n", "<br>")
@@ -70,7 +73,7 @@ for n, seg in enumerate([s for s in cfg["segments"] if any(r["segment"] == s["ke
     rows = [r for r in data if r["segment"] == seg["key"]]
     sig = sorted([r for r in rows if r["group"] == "signal"], key=lambda r: r["signal_date"], reverse=True)
     icp = [r for r in rows if r["group"] != "signal"]
-    meta = " · ".join(t.format(n=len({r["company_domain"] for r in rows}), s=len(sig), m=sum(bool(r["email"]) for r in rows))
+    meta = " · ".join(t.format(org=ORG, n=len({r["company_domain"] for r in rows}), s=len(sig), m=sum(bool(r["email"]) for r in rows))
                       for t in L["meta"] if sig or "{s}" not in t)  # a zero signal count never shows
     body = [f'<section class="seg"><div class="seg-head"><div class="seg-kicker">{L["segment"]} {n}</div><h2>{e(seg["title"])}</h2><p>{e(seg["intro"])}</p><div class="seg-meta">{meta}</div></div>']
     if sig:
@@ -99,7 +102,7 @@ tokens = {
     "STAT3_N": str(sum(bool(r["email"]) for r in data)),
     "STAT3_LABEL": L["stat3_all"] if any(r["email_status"] == "published" for r in data) else L["stat3"],
     "STAT4_N": cfg["stat4"]["n"], "STAT4_LABEL": cfg["stat4"]["label"],
-    "LBL_DOWNLOAD": L["download"], "LBL_EXPAND": L["expand"], "LBL_COLLAPSE": L["collapse"],
+    "LBL_EYEBROW": L["eyebrow"], "LBL_DISCLAIMER": L["disclaimer"], "LBL_DOWNLOAD": L["download"], "LBL_EXPAND": L["expand"], "LBL_COLLAPSE": L["collapse"],
     "METHOD_NOTE": cfg["method_note"], "FOOTER_HEADLINE": cfg["footer_headline"], "FOOTER_BODY": cfg["footer_body"],
     "CTA_LABEL": cfg["cta_label"], "FOOTER_META": cfg["footer_meta"], "CSV_FILENAME": f'{cfg["client_slug"]}_prospects.csv',
     "CALENDAR_URL": "https://calendar.google.com/calendar/appointments/schedules/AcZssZ3GtDafshGBFMT8j6ThW0mQ3wjSpKod2bJpu0KqktYZ7Mr-tcPQdHZ6bmN7EyIxqQ2Ln-AwLtZX",

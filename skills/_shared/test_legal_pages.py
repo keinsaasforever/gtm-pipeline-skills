@@ -13,6 +13,8 @@ assert legal_link(["https://x.co.uk/terms-and-conditions", "https://x.co.uk/priv
     == "https://x.co.uk/terms-and-conditions"                                  # the UK names the operator there
 assert legal_link(["https://x.fr/cgv", "https://x.fr/mentions_legales.html"], "x.fr") == "https://x.fr/mentions_legales.html"
 assert legal_link(["https://x.com/custom-imprinting"], "x.com", "US") is None
+assert legal_link(["https://x.es/content/4-quienes-somos", "https://x.es/content/6-politica-de-privacidad"], "x.es", "ES") \
+    == "https://x.es/content/6-politica-de-privacidad"                         # PrestaShop's leading page id
 assert is_legal("https://x.de/datenschutz", "") and not is_legal("https://x.com/", "inhabergeführtes Unternehmen")
 
 page = ("Geschäftsführer: Anna Beispiel\n\n## Externer Datenschutzbeauftragter\n\nMax Mustermann\nWeg 5\n32657 Lemgo\n\n"
@@ -33,6 +35,8 @@ assert "Muster" not in out and "12345-77" not in out and "Anna Beispiel" in out 
 out = strip_fax(tkg)
 assert "12345-99" not in out and "Telefon: +49 4121 12345-0" in out and len(out) == len(tkg)
 assert "05261" not in strip_fax("Fax-Nr.: 05261 999") and strip_fax("Faxgerät defekt") == "Faxgerät defekt"
+assert strip_fax("| Telefax: | +49 (0) 251 123 45 |\n| E-Mail: | a@b.de |").count("|") == 6 and "251" not in strip_fax(
+    "| Telefax: | +49 (0) 251 123 45 |")                                 # a table row keeps its cells
 ext = ("### **Betrieblicher Datenschutzbeauftragter gemäß §4f BDSG**\n\nMax Muster  \nKanzlei Recht Partnerschaft mbB "
        "Rechtsanwälte Steuerberater  \nWeg 5  \n20459 Hamburg\n\nTel. +49 40 300\n\n### **Handelsregister**\nHRB 1")
 out = strip_officers(ext)                                         # an external officer's law firm (2026-11-20)

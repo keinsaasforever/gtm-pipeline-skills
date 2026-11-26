@@ -35,7 +35,7 @@ def write_signals(fresh):
     "segments": [{"key": "a", "title": "Bottlers", "intro": "US bottlers."}],
     "approach_signal": "A dated development.", "approach_icp": "What each company buys.",
     "method_note": "We found no fresh signal at these companies. Every contact was checked.",
-    "footer_headline": "Next?", "footer_body": "Let's talk.", "footer_meta": "Prepared for Acme",
+    "footer_headline": "Next?", "footer_body": "In a short call we walk you through the tool.", "footer_meta": "Prepared for Acme",
     "cta_label": "Book a time", "signoff": {"en": "Best,\nSam"}}))
 people = [("Joshua", "Lane", "acme-casks.com", "Hi Josh,", "Spirits buyer"), ("Mia", "Stone", "stone-spirits.com", "Hi Mia,", "")]
 
