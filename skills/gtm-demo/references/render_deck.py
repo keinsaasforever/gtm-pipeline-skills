@@ -13,7 +13,7 @@ LABELS = {
                meta=("{n} {org}", "{s} mit aktuellem Kaufsignal", "{m} mit E-Mail"), tag_sig="Signal",
                stat1="Entscheider", stat1_named="Ansprechpartner", stat2="mit aktuellem Kaufsignal", stat3="geprüfte E-Mail-Adressen", stat3_all="E-Mail-Adressen",
                eyebrow="Lead-Stichprobe", disclaimer="Das ist keine Produktdemo, sondern eine Stichprobe: Leads nach deinen Kriterien, gefunden von der Engine hinter unserem Sales Agent.",
-               download="CSV herunterladen", expand="Alle aufklappen", collapse="Alle zuklappen",
+               download="CSV herunterladen", expand="Alle aufklappen", collapse="Alle zuklappen", signup="Kostenlos starten",
                months=["Jan.", "Feb.", "März", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sept.", "Okt.", "Nov.", "Dez."]),
     "en": dict(signal="Buying signal", fit="Why they fit", contact="Decision-maker", subject="Subject", draft="Draft message",
                verified="verified", likely="likely valid", published="published on their website", on_request="Email on request",
@@ -21,7 +21,7 @@ LABELS = {
                meta=("{n} {org}", "{s} with a fresh buying signal", "{m} with email"), tag_sig="Signal",
                stat1="decision-makers", stat1_named="named contacts", stat2="with a fresh buying signal", stat3="checked email addresses", stat3_all="email addresses",
                eyebrow="Lead sample", disclaimer="This is not a product demo but a sample: leads that fit your criteria, found by the engine behind our Sales Agent.",
-               download="Download CSV", expand="Expand all", collapse="Collapse all",
+               download="Download CSV", expand="Expand all", collapse="Collapse all", signup="Start free",
                months=["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]),
 }
 L = LABELS[cfg["lang"]]
@@ -105,11 +105,13 @@ tokens = {
     "LBL_EYEBROW": L["eyebrow"], "LBL_DISCLAIMER": L["disclaimer"], "LBL_DOWNLOAD": L["download"], "LBL_EXPAND": L["expand"], "LBL_COLLAPSE": L["collapse"],
     "METHOD_NOTE": cfg["method_note"], "FOOTER_HEADLINE": cfg["footer_headline"], "FOOTER_BODY": cfg["footer_body"],
     "CTA_LABEL": cfg["cta_label"], "FOOTER_META": cfg["footer_meta"], "CSV_FILENAME": f'{cfg["client_slug"]}_prospects.csv',
-    "CALENDAR_URL": "https://calendar.app.google/QaGdhyiK6AQ8bsjy9",
+    "CALENDAR_URL": "https://calendar.google.com/calendar/appointments/schedules/AcZssZ3GtDafshGBFMT8j6ThW0mQ3wjSpKod2bJpu0KqktYZ7Mr-tcPQdHZ6bmN7EyIxqQ2Ln-AwLtZX",
+    # The free start in the Sales Agent (100 free credits; the 7-day trial once it is on). ref=demo counts it.
+    "SIGNUP_URL": "https://sales.keinsaas.com/signup?ref=demo", "SIGNUP_LABEL": L["signup"],
 }
 page = re.sub(r"<!--.*?-->\n?", "", page, flags=re.S)  # template authoring notes stay out of the deliverable
 page = page.replace('"{{CSV_DATA}}"', json.dumps(csv_text, ensure_ascii=False).replace("</", "<\\/"))
 for k, v in tokens.items():
-    page = page.replace("{{" + k + "}}", v if k == "CALENDAR_URL" else e(v))
+    page = page.replace("{{" + k + "}}", v if k in ("CALENDAR_URL", "SIGNUP_URL") else e(v))
 open(sys.argv[1], "w", encoding="utf-8").write(page)
 print(f"wrote {sys.argv[1]}: {len(data)} cards; unfilled tokens: {sorted(set(re.findall(r'{{[A-Z0-9_]+}}', page)))}")

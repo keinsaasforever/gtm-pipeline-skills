@@ -604,9 +604,12 @@ result to `csv/output/`.
    - **List bar** carries a **Download-CSV button** (`.dl`) beside the Expand-all toggle; the
      footer carries a **big CTA button** (`.cta-btn`) linking to **keinsaas's** booking page, always
      (the deck is a keinsaas pitch to the prospect, never the prospect's own demo link):
-     `{{CALENDAR_URL}}` = https://calendar.app.google/QaGdhyiK6AQ8bsjy9
-     (the schedule embedded on keinsaas.com/sales-agent; re-check there if it 404s). These two elements are the
-     grafted-in pieces; the rest is the standard combined-deck look.
+     `{{CALENDAR_URL}}` = https://calendar.google.com/calendar/appointments/schedules/AcZssZ3GtDafshGBFMT8j6ThW0mQ3wjSpKod2bJpu0KqktYZ7Mr-tcPQdHZ6bmN7EyIxqQ2Ln-AwLtZX
+     (Paul 2026-11-20: the booking page for first Sales Agent calls). Beside it, outlined, the
+     **free start** (`.cta-alt`): "Kostenlos starten" / "Start free" → `{{SIGNUP_URL}}` =
+     https://sales.keinsaas.com/signup?ref=demo, so a prospect who likes the demo can start without a
+     call (Paul 2026-11-18/20). `render_deck.py` fills both. These elements are the grafted-in pieces;
+     the rest is the standard combined-deck look.
    - **`{{CSV_DATA}}`**: embed the sanitized `csv/output/` rows as an escaped JS string (`\r\n`
      line endings; quote any field containing a comma) so the Download button emits a real CSV
      offline — no server. Set `{{CSV_FILENAME}}` to `{client-slug}_prospects.csv`.

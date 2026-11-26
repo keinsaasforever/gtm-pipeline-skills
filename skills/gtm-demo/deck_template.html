@@ -4,7 +4,7 @@
   Look: "combined deck" (signal-first + ICP-first segments, approach blocks,
   hot/fit signals with source links, deliverability badges, A/B-CTA chips, expand-all).
   Plus the two grafted-in elements: a Download-CSV button (.dl, in the list bar) and a
-  big footer call-to-action button (.cta-btn -> booking link).
+  big footer call-to-action button (.cta-btn -> booking link) and beside it the free start (.cta-alt -> /signup).
 
   Fill every {{TOKEN}}. Drive it from the SANITIZED csv/output/ + context/ files.
   Do NOT hand-copy a prior client's copy — regenerate hooks/messages per contact.
@@ -109,6 +109,10 @@ footer p{color:rgba(255,255,255,.7);margin-top:12px;max-width:70ch}
   text-shadow:0 1px 1px rgba(0,0,0,.35);transition:filter .12s ease,box-shadow .12s ease,transform .12s ease}
 .cta-btn:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),inset 0 -2px 6px rgba(0,0,0,.32),0 9px 24px color-mix(in srgb,var(--blue) 50%,transparent)}
 .cta-btn:active{transform:translateY(1px);box-shadow:inset 0 2px 5px rgba(0,0,0,.4)}
+/* The free start beside it (Paul 2026-11-18/20): same size, outlined, so the booking stays the main ask. */
+.cta-row{display:flex;flex-wrap:wrap;column-gap:12px}
+.cta-alt{background:transparent;border:1px solid rgba(255,255,255,.55);box-shadow:none;text-shadow:none}
+.cta-alt:hover{background:rgba(255,255,255,.08);box-shadow:none}
 .foot-meta{font-size:12px;color:rgba(255,255,255,.4);margin-top:30px}
 @media(max-width:720px){.hero h1{font-size:31px}.stats{gap:24px}}
 @media print{body{background:#fff}.lead{break-inside:avoid;box-shadow:none}header,.hero,footer{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
@@ -166,8 +170,8 @@ footer p{color:rgba(255,255,255,.7);margin-top:12px;max-width:70ch}
 <footer><div class="wrap">
   <h2>{{FOOTER_HEADLINE}}</h2>
   <p>{{FOOTER_BODY}}</p>
-  <!-- Footer CTA button. href = the client's booking / demo link. -->
-  <div><a class="cta-btn" href="{{CALENDAR_URL}}" target="_blank" rel="noopener">{{CTA_LABEL}} &#8594;</a></div>
+  <!-- Footer CTAs: keinsaas's booking link, and the free start (sign-up) beside it. -->
+  <div class="cta-row"><a class="cta-btn" href="{{CALENDAR_URL}}" target="_blank" rel="noopener">{{CTA_LABEL}} &#8594;</a><a class="cta-btn cta-alt" href="{{SIGNUP_URL}}" target="_blank" rel="noopener">{{SIGNUP_LABEL}}</a></div>
   <div class="foot-meta">{{FOOTER_META}}</div>
 </div></footer>
 <script>
